@@ -288,7 +288,7 @@ func GetNowPlaying(network *lastfm.Api) string {
 }
 
 func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string {
-	res := fmt.Sprintf("%s's most listened to albums by %s:", username, artist)
+	res := fmt.Sprintf("%s's most listened to albums by %s:\n\n", username, artist)
 
 	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 35})
 	fmt.Printf("Top Albums:\n")
