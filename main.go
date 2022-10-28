@@ -21,6 +21,11 @@ type UserCount struct {
 	Playcount int
 }
 
+type AlbumCount struct {
+	AlbumName string
+	Playcount int
+}
+
 var group = [16]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry", "grittyfemme10",
 	"v0__", "Hirammj", "FrozenWaterz", "thevikingbadger",
@@ -282,8 +287,60 @@ func GetNowPlaying(network *lastfm.Api) string {
 
 }
 
+func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string {
+	res := fmt.Sprintf("%s's most listened to albums by %s:\n", username, artist)
+
+	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 25})
+	if err != nil {
+		fmt.Printf("GetTopAlbums err = %v\n", err)
+	}
+
+	var albums []string
+	for _, album := range result.Albums {
+		albums = append(albums, album.Name)
+	}
+
+	counts := make(map[string]int)
+	for _, album := range albums {
+		result, err := network.Album.GetInfo(lastfm.P{"artist": artist, "album": album, "username": username})
+
+		if err != nil {
+			fmt.Printf("Error during GetTopAlbumsForArtist: %v\n", err)
+			return ""
+		}
+		if result.UserPlayCount == "" {
+			counts[album] = 0
+		} else {
+			counts[album], err = strconv.Atoi(result.UserPlayCount)
+			if err != nil {
+				fmt.Printf("Error during GetTopAlbumsForArtist: %v\n", err)
+			}
+		}
+	}
+
+	var albumcounts []AlbumCount
+	for album, count := range counts {
+		albumcounts = append(albumcounts, AlbumCount{AlbumName: album, Playcount: count})
+	}
+
+	sort.Slice(albumcounts, func(i, j int) bool {
+		return albumcounts[i].Playcount > albumcounts[j].Playcount
+	})
+
+	maxCount := 0
+	for i, albumcount := range albumcounts {
+		res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, albumcount.AlbumName, albumcount.Playcount)
+		maxCount++
+		if maxCount >= 10 {
+			break
+		}
+	}
+	// fmt.Printf("result = %v\n", res)
+	return res
+}
+
 func GetTopAlbums(username, period string, network *lastfm.Api) string {
-	res := fmt.Sprintf("%s's top albums in the past ", username)
+	res := fmt.Sprintf("%s's top albums for the past ", username)
 	switch period {
 	case "7d":
 		period = "7day"
@@ -299,7 +356,7 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 		res += "6 months:\n\n"
 	case "1y":
 		period = "12month"
-		res += "1 year:\n\n"
+		res += "year:\n\n"
 	default:
 		period = "overall"
 		res = strings.TrimSuffix(res, "in the past ")
@@ -320,9 +377,74 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 	return res
 }
 
+func GetTopArtists(username, period string, network *lastfm.Api) string {
+	res := fmt.Sprintf("%s's top artists for the past ", username)
+	switch period {
+	case "7d":
+		period = "7day"
+		res += "7 days:\n\n"
+	case "1m":
+		period = "1month"
+		res += "1 month:\n\n"
+	case "3m":
+		period = "3month"
+		res += "3 months:\n\n"
+	case "6m":
+		period = "6month"
+		res += "6 months:\n\n"
+	case "1y":
+		period = "12month"
+		res += "year:\n\n"
+	default:
+		period = "overall"
+		res = strings.TrimSuffix(res, "in the past ")
+		res += "of all time:\n\n"
+	}
+
+	result, err := network.User.GetTopArtists(lastfm.P{"user": username, "period": period, "limit": 10})
+	if err != nil {
+		fmt.Printf("GetTopAlbums err = %v\n", err)
+	}
+
+	for i, artist := range result.Artists {
+		artistName := artist.Name
+		res += fmt.Sprintf("%d. %s\n", i+1, artistName)
+	}
+	// fmt.Printf("result = %v\n", res)
+	return res
+}
+
 func ParseMessage(message string, network *lastfm.Api) string {
 	if message == "" {
 		return ""
+	}
+
+	if strings.HasPrefix(message, "!disco") {
+		message = strings.TrimPrefix(message, "!disco")
+		message = strings.TrimSpace(message)
+		msg := strings.SplitN(message, " ", 2)
+		if len(msg) == 2 {
+			user := msg[0]
+			artist := msg[1]
+			return GetTopAlbumsForArtist(artist, user, network)
+		} else {
+			return ""
+		}
+	}
+
+	if strings.HasPrefix(message, "!artist") || strings.HasPrefix(message, "!a") {
+		message = strings.TrimPrefix(message, "!artist")
+		message = strings.TrimSpace(message)
+		msg := strings.Split(message, " ")
+		user := ""
+		period := ""
+		if len(msg) == 2 {
+			user = msg[0]
+			period = msg[1]
+		} else {
+			user = msg[0]
+		}
+		return GetTopArtists(user, period, network)
 	}
 
 	if strings.HasPrefix(message, "!top") {
