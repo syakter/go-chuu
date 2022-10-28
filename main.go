@@ -290,7 +290,12 @@ func GetNowPlaying(network *lastfm.Api) string {
 func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string {
 	res := fmt.Sprintf("%s's most listened to albums by %s:\n", username, artist)
 
-	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 25})
+	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 35})
+	fmt.Printf("Top Albums:\n")
+	for _, album := range result.Albums {
+		fmt.Printf("%s", album.Name)
+	}
+	fmt.Printf("Top Albums: %s", result.Albums)
 	if err != nil {
 		fmt.Printf("GetTopAlbums err = %v\n", err)
 	}
@@ -305,15 +310,15 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 		result, err := network.Album.GetInfo(lastfm.P{"artist": artist, "album": album, "username": username})
 
 		if err != nil {
-			fmt.Printf("Error during GetTopAlbumsForArtist: %v\n", err)
-			return ""
+			fmt.Printf("Error during GetTopAlbumsForArtist 1: %v\n", err)
+			continue
 		}
 		if result.UserPlayCount == "" {
 			counts[album] = 0
 		} else {
 			counts[album], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				fmt.Printf("Error during GetTopAlbumsForArtist: %v\n", err)
+				fmt.Printf("Error during GetTopAlbumsForArtist 2: %v\n", err)
 			}
 		}
 	}
