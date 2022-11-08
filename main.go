@@ -26,10 +26,10 @@ type AlbumCount struct {
 	Playcount int
 }
 
-var group = [16]string{"Codeine_turtle", "odesmut", "dudeactually",
+var group = [17]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry", "grittyfemme10",
 	"v0__", "Hirammj", "FrozenWaterz", "thevikingbadger",
-	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz"}
+	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "WestsideNoLove"}
 
 func main() {
 	err := godotenv.Load()
@@ -120,7 +120,8 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 		// fmt.Printf("res: %v\n", result)
 		if err != nil {
 			fmt.Printf("network.Artist.GetInfo err = %v\n", err)
-			return ""
+			// return "Who? :extremelaughingemoji:"
+			return fmt.Sprintf("%s", err)
 		}
 		if result.Stats.UserPlays == "" {
 			counts[user] = 0
@@ -163,7 +164,8 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 		// fmt.Printf("res: %v\n", result)
 		if err != nil {
 			fmt.Printf("network.Track.GetInfo err = %v\n", err)
-			return ""
+			// return ""
+			return fmt.Sprintf("%s", err)
 		}
 		if result.UserPlayCount == "" {
 			counts[user] = 0
@@ -208,7 +210,8 @@ func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string
 		// fmt.Printf("res: %v\n", result)
 		if err != nil {
 			fmt.Printf("network.Track.GetInfo err = %v\n", err)
-			return ""
+			// return "Last.fm error dipshit"
+			return fmt.Sprintf("%s", err)
 		}
 		if result.UserPlayCount == "" {
 			counts[user] = 0
@@ -268,7 +271,8 @@ func GetNowPlaying(network *lastfm.Api) string {
 		result, err := network.User.GetRecentTracks(lastfm.P{"user": user, "limit": 1})
 		if err != nil {
 			fmt.Printf("GetNowPlaying error: %v\n", err)
-			return ""
+			// return "It's Last.fm's fault :agony: "
+			return fmt.Sprintf("%s", err)
 		}
 		if len(result.Tracks) > 0 {
 			track := result.Tracks[0]
@@ -297,7 +301,8 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 	}
 	fmt.Printf("Top Albums: %s\n", result.Albums)
 	if err != nil {
-		fmt.Printf("GetTopAlbums err = %v\n", err)
+		// fmt.Printf("GetTopAlbums err = %v\n", err)
+		return fmt.Sprintf("%s", err)
 	}
 
 	var albums []string
@@ -402,7 +407,7 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 		res += "year:\n\n"
 	default:
 		period = "overall"
-		res = strings.TrimSuffix(res, "in the past ")
+		res = strings.TrimSuffix(res, "for the past ")
 		res += "of all time:\n\n"
 	}
 
