@@ -209,13 +209,16 @@ func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string
 		result, err := network.Album.GetInfo(lastfm.P{"artist": artistName, "album": albumName, "username": user})
 		// fmt.Printf("res: %v\n", result)
 		if err != nil {
-			fmt.Printf("network.Track.GetInfo err = %v\n", err)
+			// fmt.Printf("network.Track.GetInfo err = %v\n", err)
 			// return "Last.fm error dipshit"
-			return fmt.Sprintf("%s", err)
+			fmt.Printf("%s: %s\n", err, user)
+			continue
 		}
 		if result.UserPlayCount == "" {
+			fmt.Printf("%s\n", result)
 			counts[user] = 0
 		} else {
+			fmt.Printf("%s\n", result)
 			counts[user], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
 				fmt.Printf("%v\n", err)
@@ -270,9 +273,10 @@ func GetNowPlaying(network *lastfm.Api) string {
 	for _, user := range group {
 		result, err := network.User.GetRecentTracks(lastfm.P{"user": user, "limit": 1})
 		if err != nil {
-			fmt.Printf("GetNowPlaying error: %v\n", err)
+			// fmt.Printf("GetNowPlaying error: %v\n", err)
 			// return "It's Last.fm's fault :agony: "
-			return fmt.Sprintf("%s", err)
+			fmt.Printf("%s: %s\n", err, user)
+			continue
 		}
 		if len(result.Tracks) > 0 {
 			track := result.Tracks[0]
