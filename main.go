@@ -29,7 +29,7 @@ type AlbumCount struct {
 var group = [19]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry", "grittyfemme10",
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
-	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "Xutros", "Billy-Shakes" "maloboosie"}
+	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie"}
 
 func main() {
 	err := godotenv.Load()
