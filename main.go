@@ -9,6 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
+	gogpt "github.com/sashabaranov/go-gpt3"
+
 	"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -26,10 +30,10 @@ type AlbumCount struct {
 	Playcount int
 }
 
-var group = [17]string{"Codeine_turtle", "odesmut", "dudeactually",
+var group = [19]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry", "grittyfemme10",
-	"v0__", "Hirammj", "FrozenWaterz", "thevikingbadger",
-	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "Xutros"}
+	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
+	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie"}
 
 func main() {
 	err := godotenv.Load()
@@ -428,9 +432,31 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 	return res
 }
 
+func ChatGPT(msg string) string {
+	c := gogpt.NewClient("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")
+	ctx := context.Background()
+
+	req := gogpt.CompletionRequest{
+		Model:     gogpt.GPT3TextDavinci003,
+		MaxTokens: 100,
+		Prompt:    msg,
+	}
+	resp, err := c.CreateCompletion(ctx, req)
+	if err != nil {
+		return ""
+	}
+	return resp.Choices[0].Text
+}
+
 func ParseMessage(message string, network *lastfm.Api) string {
 	if message == "" {
 		return ""
+	}
+
+	if strings.HasPrefix(message, "!gpt") {
+		message = strings.TrimPrefix(message, "!gpt")
+		message = strings.TrimSpace(message)
+		return ChatGPT(message)
 	}
 
 	if strings.HasPrefix(message, "!disco") {
