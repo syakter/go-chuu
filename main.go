@@ -433,7 +433,7 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 }
 
 func ChatGPT(msg string) string {
-	c := gogpt.NewClient("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")
+	c := gogpt.NewClient("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")
 	ctx := context.Background()
 
 	req := gogpt.CompletionRequest{
