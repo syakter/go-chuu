@@ -30,8 +30,8 @@ type AlbumCount struct {
 	Playcount int
 }
 
-var group = [19]string{"Codeine_turtle", "odesmut", "dudeactually",
-	"z47Breezo", "itsalmostdry", "grittyfemme10",
+var group = [18]string{"Codeine_turtle", "odesmut", "dudeactually",
+	"z47Breezo", "itsalmostdry",
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
 	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie"}
 
