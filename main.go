@@ -30,12 +30,17 @@ type AlbumCount struct {
 	Playcount int
 }
 
-var group = [18]string{"Codeine_turtle", "odesmut", "dudeactually",
+var group = [19]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry",
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
-	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo", "Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie"}
+	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo",
+	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat"}
+
+var startTime time.Time
 
 func main() {
+	startTime = time.Now()
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -163,6 +168,7 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 	// fmt.Printf("artistName = %s, trackName = %s\n", artistName, trackName)
 	var res string
 	counts := make(map[string]int)
+	trackName = strings.Replace(trackName, "&amp;", "\u0026", 1)
 	for _, user := range group {
 		result, err := network.Track.GetInfo(lastfm.P{"artist": artistName, "track": trackName, "username": user})
 		// fmt.Printf("res: %v\n", result)
@@ -219,10 +225,10 @@ func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string
 			continue
 		}
 		if result.UserPlayCount == "" {
-			fmt.Printf("%s\n", result)
+			// fmt.Printf("%s\n", result)
 			counts[user] = 0
 		} else {
-			fmt.Printf("%s\n", result)
+			// fmt.Printf("%s\n", result)
 			counts[user], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
 				fmt.Printf("%v\n", err)
@@ -298,19 +304,18 @@ func GetNowPlaying(network *lastfm.Api) string {
 	return res
 
 }
-
 func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string {
 	res := fmt.Sprintf("%s's most listened to albums by %s:\n\n", username, artist)
 
-	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 35})
+	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 50})
 	fmt.Printf("Top Albums:\n")
 	for _, album := range result.Albums {
-		fmt.Printf("%s", album.Name)
+		fmt.Printf("%s\n", album.Name)
 	}
-	fmt.Printf("Top Albums: %s\n", result.Albums)
+	// fmt.Printf("Top Albums: %s\n", result.Albums)
 	if err != nil {
 		// fmt.Printf("GetTopAlbums err = %v\n", err)
-		return fmt.Sprintf("%s", err)
+		return fmt.Sprintf("%s\n", err)
 	}
 
 	var albums []string
@@ -377,7 +382,7 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 		res += "year:\n\n"
 	default:
 		period = "overall"
-		res = strings.TrimSuffix(res, "in the past ")
+		res = strings.TrimSuffix(res, "for the past ")
 		res += "of all time:\n\n"
 	}
 
@@ -438,11 +443,12 @@ func ChatGPT(msg string) string {
 
 	req := gogpt.CompletionRequest{
 		Model:     gogpt.GPT3TextDavinci003,
-		MaxTokens: 100,
+		MaxTokens: 250,
 		Prompt:    msg,
 	}
 	resp, err := c.CreateCompletion(ctx, req)
 	if err != nil {
+		fmt.Printf("ChatGPT error: %v\n", err)
 		return ""
 	}
 	return resp.Choices[0].Text
@@ -451,6 +457,11 @@ func ChatGPT(msg string) string {
 func ParseMessage(message string, network *lastfm.Api) string {
 	if message == "" {
 		return ""
+	}
+
+	if strings.HasPrefix(message, "!up") {
+		uptime := time.Since(startTime)
+		return uptime.String()
 	}
 
 	if strings.HasPrefix(message, "!gpt") {
