@@ -83,6 +83,7 @@ func main() {
 						start := time.Now()
 						message := ev.Text
 						message = strings.Split(message, ">")[1]
+						fmt.Printf("Message: %s\n", message)
 						message = strings.TrimSpace(message)
 						res := ParseMessage(message, network)
 						if res != "" {
@@ -308,10 +309,10 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 	res := fmt.Sprintf("%s's most listened to albums by %s:\n\n", username, artist)
 
 	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 50})
-	fmt.Printf("Top Albums:\n")
-	for _, album := range result.Albums {
-		fmt.Printf("%s\n", album.Name)
-	}
+	// fmt.Printf("Top Albums:\n")
+	// for _, album := range result.Albums {
+	// 	fmt.Printf("%s\n", album.Name)
+	// }
 	// fmt.Printf("Top Albums: %s\n", result.Albums)
 	if err != nil {
 		// fmt.Printf("GetTopAlbums err = %v\n", err)
