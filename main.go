@@ -213,6 +213,7 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string {
 	// fmt.Printf("artistName = %s, albumName = %s\n", artistName, albumName)
 	albumName = strings.Replace(albumName, "&amp;", "\u0026", 1)
+	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
 	// fmt.Printf("albumName = %s\n", albumName)
 	var res string
 	counts := make(map[string]int)
