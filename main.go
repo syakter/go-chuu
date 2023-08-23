@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -85,21 +86,31 @@ func main() {
 						message = strings.Split(message, ">")[1]
 						fmt.Printf("Message: %s\n", message)
 						message = strings.TrimSpace(message)
-						res := ParseMessage(message, network)
-						if res != "" {
-							_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
+						r := ParseMessage(message, network)
+						switch res := r.(type) {
+						case slack.FileUploadParameters:
+							fmt.Println("Uploading File")
+							_, err := slack_api.UploadFile(res)
 							if err != nil {
-								fmt.Printf("failed posting message: %v\n", evt)
+								fmt.Println("Failed to upload file")
 							}
-						} else {
-							res = "Who? :extremelaughingemoji:"
-							_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
-							if err != nil {
-								fmt.Printf("failed posting message: %v\n", evt)
+						case string:
+							if res != "" {
+								_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
+								if err != nil {
+									fmt.Printf("failed posting message: %v\n", evt)
+								}
+							} else {
+								res = "Who? :extremelaughingemoji:"
+								_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
+								if err != nil {
+									fmt.Printf("failed posting message: %v\n", evt)
+								}
 							}
+							elapsed := time.Since(start)
+							fmt.Printf("time elapsed = %s\n", elapsed)
 						}
-						elapsed := time.Since(start)
-						fmt.Printf("time elapsed = %s\n", elapsed)
+
 					default:
 						fmt.Printf("event = %v\n", ev)
 					}
@@ -456,7 +467,20 @@ func ChatGPT(msg string) string {
 	return resp.Choices[0].Text
 }
 
-func ParseMessage(message string, network *lastfm.Api) string {
+func GenerateCollage(username string) slack.FileUploadParameters {
+	cmd := exec.Command("collage.py", "-u", username)
+	err := cmd.Run()
+	if err != nil {
+		log.Println("Failed to run cmd")
+	}
+	params := slack.FileUploadParameters{
+		Title: "collage.png",
+		File:  "collage.png",
+	}
+	return params
+}
+
+func ParseMessage(message string, network *lastfm.Api) any {
 	if message == "" {
 		return ""
 	}
@@ -470,6 +494,12 @@ func ParseMessage(message string, network *lastfm.Api) string {
 		message = strings.TrimPrefix(message, "!gpt")
 		message = strings.TrimSpace(message)
 		return ChatGPT(message)
+	}
+
+	if strings.HasPrefix(message, "!chart") {
+		message = strings.TrimPrefix(message, "!chart")
+		message = strings.TrimSpace(message)
+		return GenerateCollage(message)
 	}
 
 	if strings.HasPrefix(message, "!disco") {
