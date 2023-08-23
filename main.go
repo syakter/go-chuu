@@ -69,10 +69,10 @@ func main() {
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
-					fmt.Printf("Ignored %+v\n", evt)
+					log.Printf("Ignored %+v\n", evt)
 					continue
 				}
-				fmt.Printf("Event received: %+v\n", eventsAPIEvent)
+				log.Printf("Event received: %+v\n", eventsAPIEvent)
 
 				client.Ack(*evt.Request)
 
@@ -84,7 +84,7 @@ func main() {
 						start := time.Now()
 						message := ev.Text
 						message = strings.Split(message, ">")[1]
-						fmt.Printf("Message: %s\n", message)
+						log.Printf("Message: %s\n", message)
 						message = strings.TrimSpace(message)
 						r := ParseMessage(message, network)
 						switch res := r.(type) {
@@ -112,15 +112,20 @@ func main() {
 						}
 
 					default:
-						fmt.Printf("event = %v\n", ev)
+						log.Printf("Event = %v\n", ev)
 					}
 
 				default:
-					client.Debugf("unsupported Events API event received")
+					client.Debugf("Unsupported Events API event received")
 				}
-
+			case socketmode.EventTypeConnecting:
+				log.Println("Connecting...")
+			case socketmode.EventTypeConnected:
+				log.Println("Connected.")
+			case socketmode.EventTypeHello:
+				log.Println("Received \"hello\" event from Slack API")
 			default:
-				fmt.Fprintf(os.Stderr, "unexpected event type received: %s\n", evt.Type)
+				log.Printf("Unexpected event type received: %s\n", evt.Type)
 			}
 		}
 	}()
@@ -129,7 +134,7 @@ func main() {
 }
 
 func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
-	// fmt.Printf("artistName = %s\n", artistName)
+	// log.Printf("artistName = %s\n", artistName)
 	if strings.ToLower(artistName) == "mike jones" {
 		return "WHO ⁉"
 	}
@@ -138,9 +143,9 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 	counts := make(map[string]int)
 	for _, user := range group {
 		result, err := network.Artist.GetInfo(lastfm.P{"artist": artistName, "username": user})
-		// fmt.Printf("res: %v\n", result)
+		// log.Printf("res: %v\n", result)
 		if err != nil {
-			fmt.Printf("network.Artist.GetInfo err = %v\n", err)
+			log.Printf("network.Artist.GetInfo err = %v\n", err)
 			// return "Who? :extremelaughingemoji:"
 			return fmt.Sprintf("%s", err)
 		}
@@ -149,7 +154,7 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 		} else {
 			counts[user], err = strconv.Atoi(result.Stats.UserPlays)
 			if err != nil {
-				fmt.Printf("strconv.Atoi err = %v\n", err)
+				log.Printf("strconv.Atoi err = %v\n", err)
 			}
 		}
 	}
@@ -172,20 +177,20 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
 func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string {
-	// fmt.Printf("artistName = %s, trackName = %s\n", artistName, trackName)
+	// log.Printf("artistName = %s, trackName = %s\n", artistName, trackName)
 	var res string
 	counts := make(map[string]int)
 	trackName = strings.Replace(trackName, "&amp;", "\u0026", 1)
 	for _, user := range group {
 		result, err := network.Track.GetInfo(lastfm.P{"artist": artistName, "track": trackName, "username": user})
-		// fmt.Printf("res: %v\n", result)
+		// log.Printf("res: %v\n", result)
 		if err != nil {
-			fmt.Printf("network.Track.GetInfo err = %v\n", err)
+			log.Printf("network.Track.GetInfo err = %v\n", err)
 			// return ""
 			return fmt.Sprintf("%s", err)
 		}
@@ -194,7 +199,7 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 		} else {
 			counts[user], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				fmt.Printf("%v\n", err)
+				log.Printf("%v\n", err)
 			}
 		}
 	}
@@ -217,34 +222,34 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
 func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string {
-	// fmt.Printf("artistName = %s, albumName = %s\n", artistName, albumName)
+	// log.Printf("artistName = %s, albumName = %s\n", artistName, albumName)
 	albumName = strings.Replace(albumName, "&amp;", "\u0026", 1)
 	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
-	// fmt.Printf("albumName = %s\n", albumName)
+	// log.Printf("albumName = %s\n", albumName)
 	var res string
 	counts := make(map[string]int)
 	for _, user := range group {
 		result, err := network.Album.GetInfo(lastfm.P{"artist": artistName, "album": albumName, "username": user})
-		// fmt.Printf("res: %v\n", result)
+		// log.Printf("res: %v\n", result)
 		if err != nil {
-			// fmt.Printf("network.Track.GetInfo err = %v\n", err)
+			// log.Printf("network.Track.GetInfo err = %v\n", err)
 			// return "Last.fm error dipshit"
-			fmt.Printf("%s: %s\n", err, user)
+			log.Printf("%s: %s\n", err, user)
 			continue
 		}
 		if result.UserPlayCount == "" {
-			// fmt.Printf("%s\n", result)
+			// log.Printf("%s\n", result)
 			counts[user] = 0
 		} else {
-			// fmt.Printf("%s\n", result)
+			// log.Printf("%s\n", result)
 			counts[user], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				fmt.Printf("%v\n", err)
+				log.Printf("%v\n", err)
 			}
 		}
 	}
@@ -267,7 +272,7 @@ func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
@@ -275,7 +280,7 @@ func GetRecentTracks(username string, limit int, network *lastfm.Api) string {
 	res := fmt.Sprintf("%s's last %d played songs:\n\n", username, limit)
 	result, err := network.User.GetRecentTracks(lastfm.P{"user": username, "limit": limit})
 	if err != nil {
-		fmt.Printf("network.User.GetRecentTracks err = %v\n", err)
+		log.Printf("network.User.GetRecentTracks err = %v\n", err)
 	}
 	for i, track := range result.Tracks {
 		if i >= limit {
@@ -284,10 +289,10 @@ func GetRecentTracks(username string, limit int, network *lastfm.Api) string {
 		artistName := track.Artist.Name
 		trackName := track.Name
 		// nowPlaying := track.NowPlaying
-		// fmt.Printf("now playing = %s", nowPlaying)
+		// log.Printf("now playing = %s", nowPlaying)
 		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, trackName)
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
@@ -296,9 +301,9 @@ func GetNowPlaying(network *lastfm.Api) string {
 	for _, user := range group {
 		result, err := network.User.GetRecentTracks(lastfm.P{"user": user, "limit": 1})
 		if err != nil {
-			// fmt.Printf("GetNowPlaying error: %v\n", err)
+			// log.Printf("GetNowPlaying error: %v\n", err)
 			// return "It's Last.fm's fault :agony: "
-			fmt.Printf("%s: %s\n", err, user)
+			log.Printf("%s: %s\n", err, user)
 			continue
 		}
 		if len(result.Tracks) > 0 {
@@ -313,7 +318,7 @@ func GetNowPlaying(network *lastfm.Api) string {
 		}
 
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 
 }
@@ -321,13 +326,13 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 	res := fmt.Sprintf("%s's most listened to albums by %s:\n\n", username, artist)
 
 	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 50})
-	// fmt.Printf("Top Albums:\n")
+	// log.Printf("Top Albums:\n")
 	// for _, album := range result.Albums {
-	// 	fmt.Printf("%s\n", album.Name)
+	// 	log.Printf("%s\n", album.Name)
 	// }
-	// fmt.Printf("Top Albums: %s\n", result.Albums)
+	// log.Printf("Top Albums: %s\n", result.Albums)
 	if err != nil {
-		// fmt.Printf("GetTopAlbums err = %v\n", err)
+		// log.Printf("GetTopAlbums err = %v\n", err)
 		return fmt.Sprintf("%s\n", err)
 	}
 
@@ -341,7 +346,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 		result, err := network.Album.GetInfo(lastfm.P{"artist": artist, "album": album, "username": username})
 
 		if err != nil {
-			fmt.Printf("Error during GetTopAlbumsForArtist 1: %v\n", err)
+			log.Printf("Error during GetTopAlbumsForArtist 1: %v\n", err)
 			continue
 		}
 		if result.UserPlayCount == "" {
@@ -349,7 +354,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 		} else {
 			counts[album], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				fmt.Printf("Error during GetTopAlbumsForArtist 2: %v\n", err)
+				log.Printf("Error during GetTopAlbumsForArtist 2: %v\n", err)
 			}
 		}
 	}
@@ -371,7 +376,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 			break
 		}
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
@@ -401,7 +406,7 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 
 	result, err := network.User.GetTopAlbums(lastfm.P{"user": username, "period": period, "limit": 10})
 	if err != nil {
-		fmt.Printf("GetTopAlbums err = %v\n", err)
+		log.Printf("GetTopAlbums err = %v\n", err)
 	}
 
 	for i, album := range result.Albums {
@@ -409,7 +414,7 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 		artistName := album.Artist.Name
 		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, albumName)
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
@@ -439,19 +444,19 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 
 	result, err := network.User.GetTopArtists(lastfm.P{"user": username, "period": period, "limit": 10})
 	if err != nil {
-		fmt.Printf("GetTopAlbums err = %v\n", err)
+		log.Printf("GetTopAlbums err = %v\n", err)
 	}
 
 	for i, artist := range result.Artists {
 		artistName := artist.Name
 		res += fmt.Sprintf("%d. %s\n", i+1, artistName)
 	}
-	// fmt.Printf("result = %v\n", res)
+	// log.Printf("result = %v\n", res)
 	return res
 }
 
 func ChatGPT(msg string) string {
-	c := gogpt.NewClient("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")
+	c := gogpt.NewClient("")
 	ctx := context.Background()
 
 	req := gogpt.CompletionRequest{
@@ -461,7 +466,7 @@ func ChatGPT(msg string) string {
 	}
 	resp, err := c.CreateCompletion(ctx, req)
 	if err != nil {
-		fmt.Printf("ChatGPT error: %v\n", err)
+		log.Printf("ChatGPT error: %v\n", err)
 		return ""
 	}
 	return resp.Choices[0].Text
