@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sort"
@@ -10,9 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"context"
-
-	gogpt "github.com/sashabaranov/go-gpt3"
+	// gogpt "github.com/sashabaranov/go-gpt3"
 
 	"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
@@ -38,13 +36,16 @@ var group = [19]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat"}
 
 var startTime time.Time
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 func main() {
 	startTime = time.Now()
+	// logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		logger.Warn("Error loading .env file", "error", err)
+		os.Exit(1)
 	}
 
 	SLACK_BOT_TOKEN := os.Getenv("SLACK_BOT_TOKEN")
@@ -69,10 +70,10 @@ func main() {
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
-					log.Printf("Ignored %+v\n", evt)
+					logger.Info("Event ignored", "event", evt)
 					continue
 				}
-				log.Printf("Event received: %+v\n", eventsAPIEvent)
+				logger.Info("Event received", "event", eventsAPIEvent)
 
 				client.Ack(*evt.Request)
 
@@ -84,48 +85,50 @@ func main() {
 						start := time.Now()
 						message := ev.Text
 						message = strings.Split(message, ">")[1]
-						log.Printf("Message: %s\n", message)
+						logger.Info(message)
 						message = strings.TrimSpace(message)
 						r := ParseMessage(message, network)
 						switch res := r.(type) {
 						case slack.FileUploadParameters:
-							fmt.Println("Uploading File")
+							logger.Info("Uploading File")
 							_, err := slack_api.UploadFile(res)
 							if err != nil {
-								fmt.Println("Failed to upload file")
+								slog.Warn("Error while uploading file", "error", err)
 							}
+							elapsed := time.Since(start)
+							slog.Info("Time Elapsed", "time", elapsed)
 						case string:
 							if res != "" {
 								_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
 								if err != nil {
-									fmt.Printf("failed posting message: %v\n", evt)
+									slog.Warn("Failed posting message", "error", err)
 								}
 							} else {
 								res = "Who? :extremelaughingemoji:"
 								_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
 								if err != nil {
-									fmt.Printf("failed posting message: %v\n", evt)
+									slog.Warn("Failed posting message", "error", err)
 								}
 							}
 							elapsed := time.Since(start)
-							fmt.Printf("time elapsed = %s\n", elapsed)
+							slog.Info("Time Elapsed", "time", elapsed)
 						}
 
 					default:
-						log.Printf("Event = %v\n", ev)
+						logger.Info("Default Event", "event", ev)
 					}
 
 				default:
 					client.Debugf("Unsupported Events API event received")
 				}
 			case socketmode.EventTypeConnecting:
-				log.Println("Connecting...")
+				logger.Info("Connecting...")
 			case socketmode.EventTypeConnected:
-				log.Println("Connected.")
+				logger.Info("Connected.")
 			case socketmode.EventTypeHello:
-				log.Println("Received \"hello\" event from Slack API")
+				logger.Info("Received \"hello\" event from Slack API")
 			default:
-				log.Printf("Unexpected event type received: %s\n", evt.Type)
+				logger.Info("Unexpected event type received", "eventType", evt.Type)
 			}
 		}
 	}()
@@ -134,7 +137,7 @@ func main() {
 }
 
 func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
-	// log.Printf("artistName = %s\n", artistName)
+	logger.Info("GetArtistScrobbles", "artistName", artistName)
 	if strings.ToLower(artistName) == "mike jones" {
 		return "WHO ⁉"
 	}
@@ -143,18 +146,19 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 	counts := make(map[string]int)
 	for _, user := range group {
 		result, err := network.Artist.GetInfo(lastfm.P{"artist": artistName, "username": user})
-		// log.Printf("res: %v\n", result)
+		// logger.Info("res: %v\n", result)
 		if err != nil {
-			log.Printf("network.Artist.GetInfo err = %v\n", err)
+			logger.Info("GetArtistScrobbles error", "error", err)
 			// return "Who? :extremelaughingemoji:"
 			return fmt.Sprintf("%s", err)
 		}
+		logger.Info("Received response from artist.getinfo", "artistName", result.Name, "user", user, "userPlays", result.Stats.UserPlays)
 		if result.Stats.UserPlays == "" {
 			counts[user] = 0
 		} else {
 			counts[user], err = strconv.Atoi(result.Stats.UserPlays)
 			if err != nil {
-				log.Printf("strconv.Atoi err = %v\n", err)
+				logger.Warn("GetArtistScrobbles error", "error", err)
 			}
 		}
 	}
@@ -177,20 +181,20 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
 func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string {
-	// log.Printf("artistName = %s, trackName = %s\n", artistName, trackName)
+	logger.Info("GetTrackScrobbles", "artistName", artistName, "trackName", trackName)
 	var res string
 	counts := make(map[string]int)
 	trackName = strings.Replace(trackName, "&amp;", "\u0026", 1)
 	for _, user := range group {
 		result, err := network.Track.GetInfo(lastfm.P{"artist": artistName, "track": trackName, "username": user})
-		// log.Printf("res: %v\n", result)
+		// logger.Info("res: %v\n", result)
 		if err != nil {
-			log.Printf("network.Track.GetInfo err = %v\n", err)
+			logger.Warn("GetTrackScrobbles error", "error", err)
 			// return ""
 			return fmt.Sprintf("%s", err)
 		}
@@ -199,7 +203,7 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 		} else {
 			counts[user], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				log.Printf("%v\n", err)
+				logger.Warn("GetTrackScrobbles error", "error", err)
 			}
 		}
 	}
@@ -222,34 +226,36 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
 func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string {
-	// log.Printf("artistName = %s, albumName = %s\n", artistName, albumName)
 	albumName = strings.Replace(albumName, "&amp;", "\u0026", 1)
 	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
-	// log.Printf("albumName = %s\n", albumName)
+
+	logger.Info("GetAlbumScrobbles", "artistName", artistName, "albumName", albumName)
+
 	var res string
 	counts := make(map[string]int)
+
 	for _, user := range group {
 		result, err := network.Album.GetInfo(lastfm.P{"artist": artistName, "album": albumName, "username": user})
-		// log.Printf("res: %v\n", result)
+		// logger.Info("res: %v\n", result)
 		if err != nil {
-			// log.Printf("network.Track.GetInfo err = %v\n", err)
+			// logger.Info("network.Track.GetInfo err = %v\n", err)
 			// return "Last.fm error dipshit"
-			log.Printf("%s: %s\n", err, user)
+			logger.Warn("GetAlbumScrobbles error", "error", err, "user", user)
 			continue
 		}
 		if result.UserPlayCount == "" {
-			// log.Printf("%s\n", result)
+			// logger.Info("%s\n", result)
 			counts[user] = 0
 		} else {
-			// log.Printf("%s\n", result)
+			// logger.Info("%s\n", result)
 			counts[user], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				log.Printf("%v\n", err)
+				logger.Warn("GetAlbumScrobbles error", "error", err)
 			}
 		}
 	}
@@ -272,7 +278,7 @@ func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
@@ -280,7 +286,7 @@ func GetRecentTracks(username string, limit int, network *lastfm.Api) string {
 	res := fmt.Sprintf("%s's last %d played songs:\n\n", username, limit)
 	result, err := network.User.GetRecentTracks(lastfm.P{"user": username, "limit": limit})
 	if err != nil {
-		log.Printf("network.User.GetRecentTracks err = %v\n", err)
+		logger.Warn("GetRecentTracks error", "error", err)
 	}
 	for i, track := range result.Tracks {
 		if i >= limit {
@@ -289,10 +295,10 @@ func GetRecentTracks(username string, limit int, network *lastfm.Api) string {
 		artistName := track.Artist.Name
 		trackName := track.Name
 		// nowPlaying := track.NowPlaying
-		// log.Printf("now playing = %s", nowPlaying)
+		// logger.Info("now playing = %s", nowPlaying)
 		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, trackName)
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
@@ -301,9 +307,9 @@ func GetNowPlaying(network *lastfm.Api) string {
 	for _, user := range group {
 		result, err := network.User.GetRecentTracks(lastfm.P{"user": user, "limit": 1})
 		if err != nil {
-			// log.Printf("GetNowPlaying error: %v\n", err)
+			// logger.Info("GetNowPlaying error: %v\n", err)
 			// return "It's Last.fm's fault :agony: "
-			log.Printf("%s: %s\n", err, user)
+			logger.Warn("GetNowPlaying error", "error", err, "user", user)
 			continue
 		}
 		if len(result.Tracks) > 0 {
@@ -318,7 +324,7 @@ func GetNowPlaying(network *lastfm.Api) string {
 		}
 
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 
 }
@@ -326,14 +332,15 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 	res := fmt.Sprintf("%s's most listened to albums by %s:\n\n", username, artist)
 
 	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 50})
-	// log.Printf("Top Albums:\n")
+	// logger.Info("Top Albums:\n")
 	// for _, album := range result.Albums {
-	// 	log.Printf("%s\n", album.Name)
+	// 	logger.Info("%s\n", album.Name)
 	// }
-	// log.Printf("Top Albums: %s\n", result.Albums)
+	// logger.Info("Top Albums: %s\n", result.Albums)
 	if err != nil {
-		// log.Printf("GetTopAlbums err = %v\n", err)
-		return fmt.Sprintf("%s\n", err)
+		// logger.Info("GetTopAlbums err = %v\n", err)
+		logger.Warn("GetTopAlbums error", "error", err)
+		return ""
 	}
 
 	var albums []string
@@ -346,7 +353,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 		result, err := network.Album.GetInfo(lastfm.P{"artist": artist, "album": album, "username": username})
 
 		if err != nil {
-			log.Printf("Error during GetTopAlbumsForArtist 1: %v\n", err)
+			logger.Warn("Error during GetTopAlbumsForArtist 1", "error", err)
 			continue
 		}
 		if result.UserPlayCount == "" {
@@ -354,7 +361,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 		} else {
 			counts[album], err = strconv.Atoi(result.UserPlayCount)
 			if err != nil {
-				log.Printf("Error during GetTopAlbumsForArtist 2: %v\n", err)
+				logger.Warn("Error during GetTopAlbumsForArtist 2", "error", err)
 			}
 		}
 	}
@@ -376,7 +383,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 			break
 		}
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
@@ -406,15 +413,16 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 
 	result, err := network.User.GetTopAlbums(lastfm.P{"user": username, "period": period, "limit": 10})
 	if err != nil {
-		log.Printf("GetTopAlbums err = %v\n", err)
+		logger.Warn("GetTopAlbums error", "error", err)
 	}
+	logger.Info("GetTopAlbums", "user", username, "period", period, "limit", 10)
 
 	for i, album := range result.Albums {
 		albumName := album.Name
 		artistName := album.Artist.Name
 		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, albumName)
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
@@ -444,43 +452,45 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 
 	result, err := network.User.GetTopArtists(lastfm.P{"user": username, "period": period, "limit": 10})
 	if err != nil {
-		log.Printf("GetTopAlbums err = %v\n", err)
+		logger.Warn("GetTopAlbums error", "error", err)
 	}
+	logger.Info("GetTopArtists", "user", username, "period", period, "limit", 10)
 
 	for i, artist := range result.Artists {
 		artistName := artist.Name
 		res += fmt.Sprintf("%d. %s\n", i+1, artistName)
 	}
-	// log.Printf("result = %v\n", res)
+	// logger.Info("result = %v\n", res)
 	return res
 }
 
-func ChatGPT(msg string) string {
-	c := gogpt.NewClient("")
-	ctx := context.Background()
+// func ChatGPT(msg string) string {
+// 	c := gogpt.NewClient("")
+// 	ctx := context.Background()
 
-	req := gogpt.CompletionRequest{
-		Model:     gogpt.GPT3TextDavinci003,
-		MaxTokens: 250,
-		Prompt:    msg,
-	}
-	resp, err := c.CreateCompletion(ctx, req)
-	if err != nil {
-		log.Printf("ChatGPT error: %v\n", err)
-		return ""
-	}
-	return resp.Choices[0].Text
-}
+// 	req := gogpt.CompletionRequest{
+// 		Model:     gogpt.GPT3TextDavinci003,
+// 		MaxTokens: 250,
+// 		Prompt:    msg,
+// 	}
+// 	resp, err := c.CreateCompletion(ctx, req)
+// 	if err != nil {
+// 		logger.Warn("ChatGPT error", "error", err)
+// 		return ""
+// 	}
+// 	return resp.Choices[0].Text
+// }
 
 func GenerateCollage(username string) slack.FileUploadParameters {
 	cmd := exec.Command("collage.py", "-u", username)
 	err := cmd.Run()
 	if err != nil {
-		log.Println("Failed to run cmd")
+		logger.Warn("Failed to run command", "command", cmd.Path, "arguments", cmd.Args, "error", err)
 	}
 	params := slack.FileUploadParameters{
-		Title: "collage.png",
-		File:  "collage.png",
+		Title:    "collage.png",
+		File:     "collage.png",
+		Channels: []string{"chuu-stats"},
 	}
 	return params
 }
@@ -495,11 +505,11 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		return uptime.String()
 	}
 
-	if strings.HasPrefix(message, "!gpt") {
-		message = strings.TrimPrefix(message, "!gpt")
-		message = strings.TrimSpace(message)
-		return ChatGPT(message)
-	}
+	// if strings.HasPrefix(message, "!gpt") {
+	// 	message = strings.TrimPrefix(message, "!gpt")
+	// 	message = strings.TrimSpace(message)
+	// 	return ChatGPT(message)
+	// }
 
 	if strings.HasPrefix(message, "!chart") {
 		message = strings.TrimPrefix(message, "!chart")
