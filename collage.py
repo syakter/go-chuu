@@ -1,4 +1,4 @@
-#!/Users/syakter/Projects/go-chuu/.venv/bin/python
+#!/home/syakter/go/src/github.com/syakter/go-chuu/.venv/bin/python
 import requests
 import json
 import shutil
