@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
+
+	// "net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -10,12 +16,68 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 	"github.com/syakter/go-lastfm/lastfm"
 )
+
+type PrettyHandlerOptions struct {
+	SlogOpts slog.HandlerOptions
+}
+
+type PrettyHandler struct {
+	slog.Handler
+	l *log.Logger
+}
+
+func (h *PrettyHandler) Handle(ctx context.Context, r slog.Record) error {
+	level := r.Level.String() + ":"
+
+	switch r.Level {
+	case slog.LevelDebug:
+		level = color.MagentaString(level)
+	case slog.LevelInfo:
+		level = color.BlueString(level)
+	case slog.LevelWarn:
+		level = color.YellowString(level)
+	case slog.LevelError:
+		level = color.RedString(level)
+	}
+
+	fields := make(map[string]interface{}, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		fields[a.Key] = a.Value.Any()
+
+		return true
+	})
+
+	b, err := json.MarshalIndent(fields, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	timeStr := r.Time.Format("[15:05:05.000]")
+	msg := color.CyanString(r.Message)
+
+	h.l.Println(timeStr, level, msg, color.WhiteString(string(b)))
+
+	return nil
+}
+
+func NewPrettyHandler(
+	out io.Writer,
+	opts PrettyHandlerOptions,
+) *PrettyHandler {
+	h := &PrettyHandler{
+		Handler: slog.NewJSONHandler(out, &opts.SlogOpts),
+		l:       log.New(out, "", 0),
+	}
+
+	return h
+}
 
 type UserCount struct {
 	Username  string
@@ -34,10 +96,22 @@ var group = [20]string{"Codeine_turtle", "odesmut", "dudeactually",
 	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople"}
 
 var startTime time.Time
-var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+// var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+var opts PrettyHandlerOptions
+var handler *PrettyHandler
+var logger *slog.Logger
 
 func main() {
 	startTime = time.Now()
+	opts = PrettyHandlerOptions{
+		SlogOpts: slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		},
+	}
+	handler = NewPrettyHandler(os.Stdout, opts)
+	logger = slog.New(handler)
+
 	err := godotenv.Load()
 
 	if err != nil {
@@ -134,22 +208,24 @@ func main() {
 }
 
 func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
-	logger.Info("GetArtistScrobbles", "artistName", artistName)
-	if strings.ToLower(artistName) == "mike jones" {
-		return "WHO ⁉"
-	}
+	logger.Debug("GetArtistScrobbles", "artistName", artistName)
+
 	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
+	// artistName = url.PathEscape(artistName)
+	logger.Debug("After QueryEscape", "artistName", artistName)
 	var res string
 	counts := make(map[string]int)
+
 	for _, user := range group {
 		result, err := network.Artist.GetInfo(lastfm.P{"artist": artistName, "username": user})
-		// logger.Info("res: %v\n", result)
+
 		if err != nil {
 			logger.Error("GetArtistScrobbles error", "error", err)
-			// return "Who? :extremelaughingemoji:"
 			return fmt.Sprintf("%s", err)
 		}
-		logger.Info("Received response from artist.getinfo", "artistName", result.Name, "user", user, "userPlays", result.Stats.UserPlays)
+
+		logger.Debug("Received response from artist.getinfo", "artistName", result.Name, "user", user, "userPlays", result.Stats.UserPlays)
+
 		if result.Stats.UserPlays == "" {
 			counts[user] = 0
 		} else {
@@ -183,10 +259,11 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 }
 
 func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string {
-	logger.Info("GetTrackScrobbles", "artistName", artistName, "trackName", trackName)
+	logger.Debug("GetTrackScrobbles", "artistName", artistName, "trackName", trackName)
 	var res string
 	counts := make(map[string]int)
 	trackName = strings.Replace(trackName, "&amp;", "\u0026", 1)
+	// trackName = url.QueryEscape(trackName)
 	for _, user := range group {
 		result, err := network.Track.GetInfo(lastfm.P{"artist": artistName, "track": trackName, "username": user})
 		// logger.Info("res: %v\n", result)
@@ -227,11 +304,52 @@ func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string
 	return res
 }
 
+func GetTopTracks(username string, period string, network *lastfm.Api) string {
+	res := fmt.Sprintf("%s's top tracks for the past ", username)
+	switch period {
+	case "7d", "1w":
+		period = "7day"
+		res += "7 days:\n\n"
+	case "1m", "30d":
+		period = "1month"
+		res += "1 month:\n\n"
+	case "3m", "90d":
+		period = "3month"
+		res += "3 months:\n\n"
+	case "6m", "180d":
+		period = "6month"
+		res += "6 months:\n\n"
+	case "1y", "365d":
+		period = "12month"
+		res += "year:\n\n"
+	default:
+		period = "overall"
+		res = strings.TrimSuffix(res, "for the past ")
+		res += "of all time:\n\n"
+	}
+
+	result, err := network.User.GetTopTracks(lastfm.P{"user": username, "period": period, "limit": 10})
+	if err != nil {
+		logger.Error("GetTopTracks error", "error", err)
+	}
+	logger.Debug("GetTopTracks", "user", username, "period", period, "limit", 10)
+
+	for i, album := range result.Tracks {
+		albumName := album.Name
+		artistName := album.Artist.Name
+		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, albumName)
+	}
+	// logger.Info("result = %v\n", res)
+	return res
+}
+
 func GetAlbumScrobbles(artistName, albumName string, network *lastfm.Api) string {
 	albumName = strings.Replace(albumName, "&amp;", "\u0026", 1)
 	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
+	// artistName = url.QueryEscape(artistName)
+	// albumName = url.QueryEscape(albumName)
 
-	logger.Info("GetAlbumScrobbles", "artistName", artistName, "albumName", albumName)
+	logger.Debug("GetAlbumScrobbles", "artistName", artistName, "albumName", albumName)
 
 	var res string
 	counts := make(map[string]int)
@@ -291,11 +409,9 @@ func GetRecentTracks(username string, limit int, network *lastfm.Api) string {
 		}
 		artistName := track.Artist.Name
 		trackName := track.Name
-		// nowPlaying := track.NowPlaying
-		// logger.Info("now playing = %s", nowPlaying)
 		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, trackName)
 	}
-	// logger.Info("result = %v\n", res)
+
 	return res
 }
 
@@ -304,8 +420,6 @@ func GetNowPlaying(network *lastfm.Api) string {
 	for _, user := range group {
 		result, err := network.User.GetRecentTracks(lastfm.P{"user": user, "limit": 1})
 		if err != nil {
-			// logger.Info("GetNowPlaying error: %v\n", err)
-			// return "It's Last.fm's fault :agony: "
 			logger.Error("GetNowPlaying error", "error", err, "user", user)
 			continue
 		}
@@ -321,7 +435,7 @@ func GetNowPlaying(network *lastfm.Api) string {
 		}
 
 	}
-	// logger.Info("result = %v\n", res)
+
 	return res
 
 }
@@ -329,13 +443,7 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 	res := fmt.Sprintf("%s's most listened to albums by %s:\n\n", username, artist)
 
 	result, err := network.Artist.GetTopAlbums(lastfm.P{"artist": artist, "limit": 50})
-	// logger.Info("Top Albums:\n")
-	// for _, album := range result.Albums {
-	// 	logger.Info("%s\n", album.Name)
-	// }
-	// logger.Info("Top Albums: %s\n", result.Albums)
 	if err != nil {
-		// logger.Info("GetTopAlbums err = %v\n", err)
 		logger.Error("GetTopAlbums error", "error", err)
 		return ""
 	}
@@ -380,6 +488,76 @@ func GetTopAlbumsForArtist(artist, username string, network *lastfm.Api) string 
 			break
 		}
 	}
+
+	return res
+}
+
+func GetTopAlbumsAll(period string, network *lastfm.Api) string {
+	type album struct {
+		AlbumName string
+		Artist    string
+	}
+
+	m := make(map[album]int)
+
+	type kv struct {
+		Key album
+		Val int
+	}
+
+	res := "Kagang's top albums for the past "
+	switch period {
+	case "7d", "1w":
+		period = "7day"
+		res += "7 days:\n\n"
+	case "1m", "30d":
+		period = "1month"
+		res += "1 month:\n\n"
+	case "3m", "90d":
+		period = "3month"
+		res += "3 months:\n\n"
+	case "6m", "180d":
+		period = "6month"
+		res += "6 months:\n\n"
+	case "1y", "365d":
+		period = "12month"
+		res += "year:\n\n"
+	default:
+		period = "overall"
+		res = strings.TrimSuffix(res, "for the past ")
+		res += "of all time:\n\n"
+	}
+
+	for _, user := range group {
+		result, err := network.User.GetTopAlbums(lastfm.P{"user": user, "period": period, "limit": 10})
+		if err != nil {
+			logger.Error("GetTopAlbums error", "error", err)
+		}
+		for _, alb := range result.Albums {
+			count, err := strconv.Atoi(alb.PlayCount)
+			if err != nil {
+				logger.Error("strconv error", "error", err)
+			}
+			albm := album{alb.Name, alb.Artist.Name}
+			if _, ok := m[albm]; ok {
+				m[albm] += count
+			} else {
+				m[albm] = count
+			}
+		}
+	}
+	keys := make([]album, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return m[keys[i]] > m[keys[j]] })
+
+	for i, album := range keys {
+		res += fmt.Sprintf("%d. %s - %s -- %d scrobbles\n", i+1, album.Artist, album.AlbumName, m[album])
+		if i >= 9 {
+			break
+		}
+	}
 	// logger.Info("result = %v\n", res)
 	return res
 }
@@ -412,14 +590,13 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 	if err != nil {
 		logger.Error("GetTopAlbums error", "error", err)
 	}
-	logger.Info("GetTopAlbums", "user", username, "period", period, "limit", 10)
+	logger.Debug("GetTopAlbums", "user", username, "period", period, "limit", 10)
 
 	for i, album := range result.Albums {
 		albumName := album.Name
 		artistName := album.Artist.Name
 		res += fmt.Sprintf("%d. %s - %s\n", i+1, artistName, albumName)
 	}
-	// logger.Info("result = %v\n", res)
 	return res
 }
 
@@ -451,19 +628,14 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 	if err != nil {
 		logger.Error("GetTopAlbums error", "error", err)
 	}
-	logger.Info("GetTopArtists", "user", username, "period", period, "limit", 10)
+	logger.Debug("GetTopArtists", "user", username, "period", period, "limit", 10)
 
 	for i, artist := range result.Artists {
 		artistName := artist.Name
 		res += fmt.Sprintf("%d. %s\n", i+1, artistName)
 	}
-	// logger.Info("result = %v\n", res)
-	return res
-}
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return !os.IsNotExist(err)
+	return res
 }
 
 func ChatGPT(prompt string) string {
@@ -472,7 +644,6 @@ func ChatGPT(prompt string) string {
 		logger.Error(err.Error())
 	}
 	defer outputFile.Close()
-	// llamaCmd := fmt.Sprintf("./main -t 2 -ngl 32 -m models/codellama.gguf --color -c 4096 --temp 0.7 --repeat_penalty 1.1 -n 500 -p \"%s\" > output.txt", prompt)
 	cmd := exec.Command("./main", "-t", "2", "-ngl", "32", "-m", "models/codellama.gguf", "-c", "4096", "--repeat_penalty", "1.1", "-n", "500", "-p", prompt)
 	cmd.Stdout = outputFile
 	err = cmd.Start()
@@ -483,27 +654,12 @@ func ChatGPT(prompt string) string {
 	if err != nil {
 		logger.Error("Failed to run command", "command", cmd.Path, "arguments", cmd.Args, "cmdError", cmd.Err, "err", err)
 	}
-	// var b strings.Builder
-	// scanner := bufio.NewScanner(outputFile)
-	// for scanner.Scan() {
-	// 	b.WriteString(scanner.Text())
-	// 	b.WriteString("\n")
-	// 	logger.Info(scanner.Text())
-	// }
 
 	content, err := os.ReadFile("output.txt")
 	if err != nil {
 		logger.Error(err.Error())
 	}
 	return string(content)
-
-	// if err := scanner.Err(); err != nil {
-	// 	logger.Error(err.Error())
-	// }
-
-	// os.Remove("output.txt")
-	// logger.Info(b.String())
-	// return b.String()
 }
 
 func GenerateCollage(username string) slack.FileUploadParameters {
@@ -530,18 +686,6 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		return uptime.String()
 	}
 
-	if strings.HasPrefix(message, "!gpt") {
-		message = strings.TrimPrefix(message, "!gpt")
-		message = strings.TrimSpace(message)
-		return ChatGPT(message)
-	}
-
-	if strings.HasPrefix(message, "!chart") {
-		message = strings.TrimPrefix(message, "!chart")
-		message = strings.TrimSpace(message)
-		return GenerateCollage(message)
-	}
-
 	if strings.HasPrefix(message, "!disco") {
 		message = strings.TrimPrefix(message, "!disco")
 		message = strings.TrimSpace(message)
@@ -555,8 +699,13 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		}
 	}
 
-	if strings.HasPrefix(message, "!artist") || strings.HasPrefix(message, "!a") {
-		message = strings.TrimPrefix(message, "!artist")
+	if strings.HasPrefix(message, "!topartist") || strings.HasPrefix(message, "!ta") {
+		if strings.HasPrefix(message, "!topartist") {
+			message = strings.TrimPrefix(message, "!topartist")
+		} else {
+			message = strings.TrimPrefix(message, "!ta")
+		}
+
 		message = strings.TrimSpace(message)
 		msg := strings.Split(message, " ")
 		user := ""
@@ -568,6 +717,38 @@ func ParseMessage(message string, network *lastfm.Api) any {
 			user = msg[0]
 		}
 		return GetTopArtists(user, period, network)
+	}
+
+	if strings.HasPrefix(message, "!track") {
+		message = strings.TrimPrefix(message, "!track")
+		message = strings.TrimSpace(message)
+		msg := strings.Split(message, " ")
+		user := ""
+		period := ""
+		if len(msg) == 2 {
+			user = msg[0]
+			period = msg[1]
+		} else {
+			user = msg[0]
+		}
+		return GetTopTracks(user, period, network)
+	}
+
+	if strings.HasPrefix(message, "!artist") {
+		message = strings.TrimPrefix(message, "!artist")
+		message = strings.TrimSpace(message)
+		artistName := message
+		return GetArtistScrobbles(artistName, network)
+	}
+
+	if strings.HasPrefix(message, "!kagang") {
+		message = strings.TrimPrefix(message, "!kagang")
+		message = strings.TrimSpace(message)
+		period := ""
+		if message != "" {
+			period = message
+		}
+		return GetTopAlbumsAll(period, network)
 	}
 
 	if strings.HasPrefix(message, "!top") {
@@ -609,16 +790,26 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		return GetRecentTracks(user, limit, network)
 	}
 
-	if strings.Contains(message, " by ") {
+	if strings.Contains(message, " by ") || strings.Contains(message, " By ") {
 		if strings.HasPrefix(message, "!t") {
 			message = strings.TrimSpace(strings.Split(message, "!t")[1])
-			msg := strings.Split(message, " by ")
+			var msg []string
+			if strings.Contains(message, " by ") {
+				msg = strings.Split(message, " by ")
+			} else {
+				msg = strings.Split(message, " By ")
+			}
 			trackName := msg[0]
 			artistName := msg[1]
 
 			return GetTrackScrobbles(artistName, trackName, network)
 		} else {
-			msg := strings.Split(message, " by ")
+			var msg []string
+			if strings.Contains(message, " by ") {
+				msg = strings.Split(message, " by ")
+			} else {
+				msg = strings.Split(message, " By ")
+			}
 			albumName := msg[0]
 			artistName := msg[1]
 
@@ -628,4 +819,5 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		artistName := message
 		return GetArtistScrobbles(artistName, network)
 	}
+
 }
