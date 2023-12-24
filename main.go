@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	// "image"
+
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
@@ -739,6 +741,66 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 	return res
 }
 
+func GetWeeklyLeaderboard(network *lastfm.Api) string {
+	var fromTime, toTime int
+	counts := make(map[string]int)
+
+	for _, user := range group {
+		result, err := network.User.GetWeeklyChartList(lastfm.P{"user": user})
+		if err != nil {
+			logger.Error("GetWeeklyChartList error", "error", err)
+		}
+		logger.Debug("GetWeeklyChartList", "user", user)
+		chartList := result.Charts
+		from := chartList[len(chartList)-1].From
+		fromTime, err = strconv.Atoi(from)
+		if err != nil {
+			logger.Error("fromTime", "error", err)
+		}
+		to := chartList[len(chartList)-1].To
+		toTime, err = strconv.Atoi(to)
+		if err != nil {
+			logger.Error("toTime", "error", err)
+		}
+		artistChart, err := network.User.GetWeeklyArtistChart(lastfm.P{"user": user, "from": from, "to": to})
+		if err != nil {
+			logger.Error("GetWeeklyArtistChart error", "error", err)
+		}
+		totalPlayCount := 0
+		for _, artist := range artistChart.Artists {
+			playcount, err := strconv.Atoi(artist.PlayCount)
+			if err != nil {
+				logger.Error("strconv artist.Playcount", "error", err)
+			}
+			totalPlayCount += playcount
+		}
+		counts[user] = totalPlayCount
+	}
+	var usercounts []UserCount
+	for user, count := range counts {
+		usercounts = append(usercounts, UserCount{Username: user, Playcount: count})
+	}
+	sort.Slice(usercounts, func(i, j int) bool {
+		return usercounts[i].Playcount > usercounts[j].Playcount
+	})
+	fromDate := time.Unix(int64(fromTime), 0)
+	toDate := time.Unix(int64(toTime), 0)
+	res := fmt.Sprintf("Kagang Weekly Leaderboard for week of %s to %s\n\n", fromDate.UTC().Format("2006/01/02"), toDate.UTC().Format("2006/01/02"))
+	for i, usercount := range usercounts {
+		if i == 0 {
+			res += fmt.Sprintf("👑. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+		} else if i == 1 {
+			res += fmt.Sprintf("🥈. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+		} else if i == 2 {
+			res += fmt.Sprintf("🥉. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+		} else {
+			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
+		}
+	}
+
+	return res
+}
+
 func ChatGPT(prompt string) string {
 	outputFile, err := os.OpenFile("output.txt", os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
@@ -763,19 +825,64 @@ func ChatGPT(prompt string) string {
 	return string(content)
 }
 
-func GenerateCollage(username string) slack.FileUploadParameters {
-	cmd := exec.Command("collage.py", "-u", username)
-	err := cmd.Run()
-	if err != nil {
-		logger.Error("Failed to run command", "command", cmd.Path, "arguments", cmd.Args, "error", err)
-	}
-	params := slack.FileUploadParameters{
-		Title:    "collage.png",
-		File:     "collage.png",
-		Channels: []string{"chuu-stats"},
-	}
-	return params
-}
+// func GenerateCollage(username string) slack.FileUploadParameters {
+
+// 	collage := image.NewRGBA(image.Rect(0, 0, 900, 900))
+
+// 	tmpDir, err := os.MkdirTemp("", "collage")
+// 	if err != nil {
+// 		return err
+// 	}
+// 	defer os.RemoveAll(tmpDir)
+
+// 	imageURLs, err := getAlbumImages(username)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	// Fetch and process images in order of most listened to least listened to
+// 	for i, url := range imageURLs {
+// 		if i >= 9 {
+// 			break
+// 		}
+
+// 		if url == "" {
+// 			continue
+// 		}
+
+// 		filename := filepath.Join(tmpDir, fmt.Sprintf("image%d.png", i))
+// 		if err := downloadImage(url, filename); err != nil {
+// 			fmt.Printf("Could not retrieve image: %s\n", filename)
+// 			continue
+// 		}
+
+// 		fmt.Printf("Successfully downloaded image: %s\n", filename)
+
+// 		img, _, err := image.DecodeFile(filename)
+// 		if err != nil {
+// 			fmt.Printf("Could not decode image: %s\n", filename)
+// 			continue
+// 		}
+
+// 		x := (i % 3) * 300
+// 		y := (i / 3) * 300
+// 		rect := image.Rect(x, y, x+300, y+300)
+// 		draw.Draw(collage, rect, img, image.Point{}, draw.Over)
+// 	}
+
+// 	outfile, err := os.Create("collage.png")
+// 	if err != nil {
+// 		return err
+// 	}
+// 	defer outfile.Close()
+
+// 	err = png.Encode(outfile, collage)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	return nil
+// }
 
 func ParseMessage(message string, network *lastfm.Api) any {
 	if message == "" {
@@ -793,6 +900,7 @@ func ParseMessage(message string, network *lastfm.Api) any {
 			"!rp <user> <limit>: Last <limit> songs played by <user>\n" +
 			"!kga <period>: Top listened albums in Kagang in <period>\n" +
 			"!kgt <period>: Top listened tracks in Kagang in <period>\n" +
+			"!leaderboard: Leaderboard for previous week" +
 			"!up: Uptime"
 		return helpStr
 	}
@@ -802,11 +910,11 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		return uptime.String()
 	}
 
-	if strings.HasPrefix(message, "!chart") {
-		message = strings.TrimPrefix(message, "!chart")
-		message = strings.TrimSpace(message)
-		return GenerateCollage(message)
-	}
+	// if strings.HasPrefix(message, "!chart") {
+	// 	message = strings.TrimPrefix(message, "!chart")
+	// 	message = strings.TrimSpace(message)
+	// 	return GenerateCollage(message)
+	// }
 
 	if strings.HasPrefix(message, "!disco") {
 		message = strings.TrimPrefix(message, "!disco")
@@ -819,6 +927,10 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		} else {
 			return ""
 		}
+	}
+
+	if strings.HasPrefix(message, "!leaderboard") {
+		return GetWeeklyLeaderboard(network)
 	}
 
 	if strings.HasPrefix(message, "!dt") {
