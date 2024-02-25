@@ -7,16 +7,12 @@ import (
 	"io"
 	"log"
 	"log/slog"
-
-	// "net/url"
 	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	// "image"
 
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -214,54 +210,54 @@ func main() {
 	client.Run()
 }
 
-func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
-	logger.Debug("GetArtistScrobbles", "artistName", artistName)
+// func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
+// 	logger.Debug("GetArtistScrobbles", "artistName", artistName)
 
-	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
+// 	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
 
-	var res string
-	counts := make(map[string]int)
+// 	var res string
+// 	counts := make(map[string]int)
 
-	for _, user := range group {
-		result, err := network.Artist.GetInfo(lastfm.P{"artist": artistName, "username": user})
+// 	for _, user := range group {
+// 		result, err := network.Artist.GetInfo(lastfm.P{"artist": artistName, "username": user})
 
-		if err != nil {
-			logger.Error("GetArtistScrobbles error", "error", err)
-			return fmt.Sprintf("%s", err)
-		}
+// 		if err != nil {
+// 			logger.Error("GetArtistScrobbles error", "error", err)
+// 			return fmt.Sprintf("%s", err)
+// 		}
 
-		logger.Debug("Received response from artist.getinfo", "artistName", result.Name, "user", user, "userPlays", result.Stats.UserPlays)
+// 		logger.Debug("Received response from artist.getinfo", "artistName", result.Name, "user", user, "userPlays", result.Stats.UserPlays)
 
-		if result.Stats.UserPlays == "" {
-			counts[user] = 0
-		} else {
-			counts[user], err = strconv.Atoi(result.Stats.UserPlays)
-			if err != nil {
-				logger.Error("GetArtistScrobbles error", "error", err)
-			}
-		}
-	}
-	var usercounts []UserCount
-	for user, count := range counts {
-		usercounts = append(usercounts, UserCount{Username: user, Playcount: count})
-	}
-	sort.Slice(usercounts, func(i, j int) bool {
-		return usercounts[i].Playcount > usercounts[j].Playcount
-	})
-	res = fmt.Sprintf("Top %s fans in Kagang:\n", artistName)
-	for i, usercount := range usercounts {
-		if i == 0 {
-			res += fmt.Sprintf("👑. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
-		} else if i == 1 {
-			res += fmt.Sprintf("🥈. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
-		} else if i == 2 {
-			res += fmt.Sprintf("🥉. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
-		} else {
-			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
-		}
-	}
-	return res
-}
+// 		if result.Stats.UserPlays == "" {
+// 			counts[user] = 0
+// 		} else {
+// 			counts[user], err = strconv.Atoi(result.Stats.UserPlays)
+// 			if err != nil {
+// 				logger.Error("GetArtistScrobbles error", "error", err)
+// 			}
+// 		}
+// 	}
+// 	var usercounts []UserCount
+// 	for user, count := range counts {
+// 		usercounts = append(usercounts, UserCount{Username: user, Playcount: count})
+// 	}
+// 	sort.Slice(usercounts, func(i, j int) bool {
+// 		return usercounts[i].Playcount > usercounts[j].Playcount
+// 	})
+// 	res = fmt.Sprintf("Top %s fans in Kagang:\n", artistName)
+// 	for i, usercount := range usercounts {
+// 		if i == 0 {
+// 			res += fmt.Sprintf("👑. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+// 		} else if i == 1 {
+// 			res += fmt.Sprintf("🥈. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+// 		} else if i == 2 {
+// 			res += fmt.Sprintf("🥉. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+// 		} else {
+// 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
+// 		}
+// 	}
+// 	return res
+// }
 
 func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string {
 	logger.Debug("GetTrackScrobbles", "artistName", artistName, "trackName", trackName)
@@ -900,7 +896,7 @@ func ParseMessage(message string, network *lastfm.Api) any {
 			"!rp <user> <limit>: Last <limit> songs played by <user>\n" +
 			"!kga <period>: Top listened albums in Kagang in <period>\n" +
 			"!kgt <period>: Top listened tracks in Kagang in <period>\n" +
-			"!leaderboard: Leaderboard for previous week" +
+			"!leaderboard: Leaderboard for previous week\n" +
 			"!up: Uptime"
 		return helpStr
 	}
