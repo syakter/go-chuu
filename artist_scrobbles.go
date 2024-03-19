@@ -10,7 +10,7 @@ import (
 )
 
 func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
-	logger.Debug("GetArtistScrobbles", "artistName", artistName)
+	logger.Debug("Start GetArtistScrobbles", "artistName", artistName)
 
 	artistName = strings.Replace(artistName, "&amp;", "\u0026", 1)
 
@@ -36,6 +36,27 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 			}
 		}
 	}
+
+	var usercounts []UserCount
+	for user, count := range counts {
+		usercounts = append(usercounts, UserCount{Username: user, Playcount: count})
+	}
+	sort.Slice(usercounts, func(i, j int) bool {
+		return usercounts[i].Playcount > usercounts[j].Playcount
+	})
+	res = fmt.Sprintf("Top %s fans in Kagang:\n", artistName)
+	for i, usercount := range usercounts {
+		if i == 0 {
+			res += fmt.Sprintf("👑. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+		} else if i == 1 {
+			res += fmt.Sprintf("🥈. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+		} else if i == 2 {
+			res += fmt.Sprintf("🥉. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
+		} else {
+			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
+		}
+	}
+	logger.Debug("GetArtistScrobbles done", "result", res)
 
 	return res
 }

@@ -158,10 +158,12 @@ func main() {
 					case *slackevents.AppMentionEvent:
 						start := time.Now()
 						message := ev.Text
+						logger.Info("Message Received", "message", message)
 						message = strings.Split(message, ">")[1]
-						logger.Info(message)
 						message = strings.TrimSpace(message)
+						logger.Info("Message after parsing", "message", message)
 						r := ParseMessage(message, network)
+						logger.Debug("ParseMessage", "result", r)
 						switch res := r.(type) {
 						case slack.FileUploadParameters:
 							logger.Info("Uploading File")
@@ -172,6 +174,7 @@ func main() {
 							elapsed := time.Since(start).String()
 							logger.Info("Time Elapsed", "time", elapsed)
 						case string:
+							logger.Debug("Case string", "result", r, "resultType", res)
 							if res != "" {
 								_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
 								if err != nil {
