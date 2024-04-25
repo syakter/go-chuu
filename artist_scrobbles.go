@@ -56,7 +56,6 @@ func GetArtistScrobbles(artistName string, network *lastfm.Api) string {
 			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
 		}
 	}
-	logger.Debug("GetArtistScrobbles done", "result", res)
 
 	return res
 }

@@ -48,7 +48,6 @@ func (h *PrettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	fields := make(map[string]interface{}, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
 		fields[a.Key] = a.Value.Any()
-
 		return true
 	})
 
@@ -59,8 +58,11 @@ func (h *PrettyHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	timeStr := r.Time.Format("[15:05:05.000]")
 	msg := color.CyanString(r.Message)
-
-	h.l.Println(timeStr, level, msg, color.WhiteString(string(b)))
+	if r.NumAttrs() > 0 {
+		h.l.Println(timeStr, level, msg, color.WhiteString(string(b)))
+	} else {
+		h.l.Println(timeStr, level, msg)
+	}
 
 	return nil
 }
@@ -92,18 +94,21 @@ type TrackCount struct {
 	Playcount int
 }
 
-var group = [21]string{"Codeine_turtle", "odesmut", "dudeactually",
+var group = [21]string{
+	"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry",
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
 	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo",
-	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty"}
+	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty",
+}
 
 var startTime time.Time
 
-// var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
-var opts PrettyHandlerOptions
-var handler *PrettyHandler
-var logger *slog.Logger
+var (
+	opts    PrettyHandlerOptions
+	handler *PrettyHandler
+	logger  *slog.Logger
+)
 
 func main() {
 	startTime = time.Now()
@@ -116,7 +121,6 @@ func main() {
 	logger = slog.New(handler)
 
 	err := godotenv.Load()
-
 	if err != nil {
 		logger.Error("Error loading .env file", "error", err)
 		os.Exit(1)
@@ -126,7 +130,6 @@ func main() {
 	SLACK_APP_TOKEN := os.Getenv("SLACK_APP_TOKEN")
 	LF_API_KEY := os.Getenv("LF_API_KEY")
 	LF_API_SECRET := os.Getenv("LF_API_SECRET")
-
 	slack_api := slack.New(
 		SLACK_BOT_TOKEN,
 		slack.OptionAppLevelToken(SLACK_APP_TOKEN),
@@ -161,7 +164,7 @@ func main() {
 						logger.Info("Message Received", "message", message)
 						message = strings.Split(message, ">")[1]
 						message = strings.TrimSpace(message)
-						logger.Info("Message after parsing", "message", message)
+						logger.Debug("Message after parsing", "message", message)
 						r := ParseMessage(message, network)
 						logger.Debug("ParseMessage", "result", r)
 						switch res := r.(type) {
@@ -174,7 +177,6 @@ func main() {
 							elapsed := time.Since(start).String()
 							logger.Info("Time Elapsed", "time", elapsed)
 						case string:
-							logger.Debug("Case string", "result", r, "resultType", res)
 							if res != "" {
 								_, _, err := slack_api.PostMessage(ev.Channel, slack.MsgOptionText(res, false))
 								if err != nil {
@@ -361,7 +363,6 @@ func GetNowPlaying(network *lastfm.Api) string {
 	}
 
 	return res
-
 }
 
 func GetTopAlbumsAll(period string, network *lastfm.Api) string {
@@ -865,5 +866,4 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		artistName := message
 		return GetArtistScrobbles(artistName, network)
 	}
-
 }
