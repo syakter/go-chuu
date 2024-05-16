@@ -1,3 +1,5 @@
+# github.com/bwmarrin/discordgo v0.28.1
+## explicit; go 1.13
 # github.com/fatih/color v1.16.0
 ## explicit; go 1.17
 github.com/fatih/color
@@ -25,6 +27,8 @@ github.com/slack-go/slack/socketmode
 # github.com/syakter/go-lastfm v0.0.0-20181026090031-3d449ce689a4
 ## explicit
 github.com/syakter/go-lastfm/lastfm
+# golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
+## explicit; go 1.11
 # golang.org/x/sys v0.14.0
 ## explicit; go 1.18
 golang.org/x/sys/unix

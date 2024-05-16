@@ -114,7 +114,7 @@ func main() {
 	startTime = time.Now()
 	opts = PrettyHandlerOptions{
 		SlogOpts: slog.HandlerOptions{
-			Level: slog.LevelDebug,
+			Level: slog.LevelInfo,
 		},
 	}
 	handler = NewPrettyHandler(os.Stdout, opts)
@@ -532,40 +532,36 @@ func GetTopAlbums(username, period string, network *lastfm.Api) string {
 }
 
 func GetWeeklyLeaderboard(network *lastfm.Api) string {
-	var fromTime, toTime int
+	var fromTime, toTime time.Time
 	counts := make(map[string]int)
 
+	// Calculate from and to times for the past 7 days
+	toTime = time.Now()                 // current time
+	fromTime = toTime.AddDate(0, 0, -7) // subtract 7 days from today
+
 	for _, user := range group {
-		result, err := network.User.GetWeeklyChartList(lastfm.P{"user": user})
-		if err != nil {
-			logger.Error("GetWeeklyChartList error", "error", err)
-		}
-		logger.Debug("GetWeeklyChartList", "user", user)
-		chartList := result.Charts
-		from := chartList[len(chartList)-1].From
-		fromTime, err = strconv.Atoi(from)
-		if err != nil {
-			logger.Error("fromTime", "error", err)
-		}
-		to := chartList[len(chartList)-1].To
-		toTime, err = strconv.Atoi(to)
-		if err != nil {
-			logger.Error("toTime", "error", err)
-		}
-		artistChart, err := network.User.GetWeeklyArtistChart(lastfm.P{"user": user, "from": from, "to": to})
+		// Format times as Unix timestamps for Last.fm API parameters
+		fromTimestamp := strconv.FormatInt(fromTime.Unix(), 10)
+		toTimestamp := strconv.FormatInt(toTime.Unix(), 10)
+
+		artistChart, err := network.User.GetWeeklyArtistChart(lastfm.P{"user": user, "from": fromTimestamp, "to": toTimestamp})
 		if err != nil {
 			logger.Error("GetWeeklyArtistChart error", "error", err)
+			continue
 		}
+
 		totalPlayCount := 0
 		for _, artist := range artistChart.Artists {
 			playcount, err := strconv.Atoi(artist.PlayCount)
 			if err != nil {
 				logger.Error("strconv artist.Playcount", "error", err)
+				continue
 			}
 			totalPlayCount += playcount
 		}
 		counts[user] = totalPlayCount
 	}
+
 	var usercounts []UserCount
 	for user, count := range counts {
 		usercounts = append(usercounts, UserCount{Username: user, Playcount: count})
@@ -573,18 +569,21 @@ func GetWeeklyLeaderboard(network *lastfm.Api) string {
 	sort.Slice(usercounts, func(i, j int) bool {
 		return usercounts[i].Playcount > usercounts[j].Playcount
 	})
-	fromDate := time.Unix(int64(fromTime), 0)
-	toDate := time.Unix(int64(toTime), 0)
-	res := fmt.Sprintf("Kagang Weekly Leaderboard for week of %s to %s\n\n", fromDate.UTC().Format("2006/01/02"), toDate.UTC().Format("2006/01/02"))
+
+	fromDate := fromTime.Format("2006/01/02")
+	toDate := toTime.Format("2006/01/02")
+	res := fmt.Sprintf("Weekly Leaderboard for past 7 days: %s to %s\n\n", fromDate, toDate)
 	for i, usercount := range usercounts {
-		if i == 0 {
-			res += fmt.Sprintf("👑. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
-		} else if i == 1 {
-			res += fmt.Sprintf("🥈. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
-		} else if i == 2 {
-			res += fmt.Sprintf("🥉. %s: %d scrobbles\n", usercount.Username, usercount.Playcount)
-		} else {
-			res += fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
+		ranking := fmt.Sprintf("%d. %s: %d scrobbles\n", i+1, usercount.Username, usercount.Playcount)
+		switch i {
+		case 0:
+			res += "👑 " + ranking
+		case 1:
+			res += "🥈 " + ranking
+		case 2:
+			res += "🥉 " + ranking
+		default:
+			res += ranking
 		}
 	}
 
