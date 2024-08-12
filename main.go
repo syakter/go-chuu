@@ -18,9 +18,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/disintegration/imaging"
 	"github.com/fatih/color"
 	"github.com/fogleman/gg"
-	"github.com/joho/godotenv"
+	//"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
@@ -125,16 +126,20 @@ func main() {
 	handler = NewPrettyHandler(os.Stdout, opts)
 	logger = slog.New(handler)
 
-	err := godotenv.Load()
-	if err != nil {
-		logger.Error("Error loading .env file", "error", err)
-		os.Exit(1)
-	}
+	//err := godotenv.Load()
+	//if err != nil {
+	//logger.Error("Error loading .env file", "error", err)
+	//os.Exit(1)
+	//}
 
-	SLACK_BOT_TOKEN := os.Getenv("SLACK_BOT_TOKEN")
-	SLACK_APP_TOKEN := os.Getenv("SLACK_APP_TOKEN")
-	LF_API_KEY := os.Getenv("LF_API_KEY")
-	LF_API_SECRET := os.Getenv("LF_API_SECRET")
+	//SLACK_BOT_TOKEN := os.Getenv("SLACK_BOT_TOKEN")
+	//SLACK_APP_TOKEN := os.Getenv("SLACK_APP_TOKEN")
+	//LF_API_KEY := os.Getenv("LF_API_KEY")
+	//LF_API_SECRET := os.Getenv("LF_API_SECRET")
+	SLACK_BOT_TOKEN := "xoxb-2572234328865-3269802744628-90oocfOiqhGl7tBRG8qQF7Qb"
+	SLACK_APP_TOKEN := "xapp-1-A037VDH0GKC-3269010937877-305f94ef1107bcd63fd55aeb75f4f6bfc68cb86559c462aac2bb47eb94f34e31"
+	LF_API_KEY := "13461b7f6321e69d28b9ee51ac8521f5"
+	LF_API_SECRET := "db5e679c42c58bde9a2a3291ae30ed1a"
 	slack_api := slack.New(
 		SLACK_BOT_TOKEN,
 		slack.OptionAppLevelToken(SLACK_APP_TOKEN),
@@ -242,13 +247,15 @@ func createAlbumChart(albums []struct {
 	Image  string `json:"image"`
 }) (*gg.Context, error) {
 	const (
-		width  = 600
-		height = 600
+		width  = 900
+		height = 900
 		rows   = 3
 		cols   = 3
 	)
 
 	dc := gg.NewContext(width, height)
+	albumWidth := width / cols
+	albumHeight := height / rows
 
 	for i, album := range albums[:9] { // Limit to 9 albums
 		x := float64(i%cols) * (float64(width) / float64(cols))
@@ -266,16 +273,30 @@ func createAlbumChart(albums []struct {
 			return nil, err
 		}
 
+		resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
 		// Draw album art
-		dc.DrawImage(img, int(x), int(y))
+		dc.DrawImage(resizedImg, int(x), int(y))
 	}
 
 	return dc, nil
 }
 
-func GenerateAlbumChart(username string, network *lastfm.Api) slack.FileUploadParameters {
+func GenerateAlbumChart(username string, period string, network *lastfm.Api) slack.FileUploadParameters {
 	// Call the web server API
-	chartData, err := callWebServerAPI(username, "7day")
+	formattedPeriod := "7day"
+	switch period {
+	case "7d", "1w":
+		formattedPeriod = "7day"
+	case "1d":
+		formattedPeriod = "1day"
+	case "30d", "1m":
+		formattedPeriod = "30day"
+	case "1y":
+		formattedPeriod = "365day"
+	default:
+		formattedPeriod = "overall"
+	}
+	chartData, err := callWebServerAPI(username, formattedPeriod)
 	if err != nil {
 		logger.Error("Web server API call error", "error", err)
 		return slack.FileUploadParameters{}
@@ -731,8 +752,17 @@ func ParseMessage(message string, network *lastfm.Api) any {
 
 	if strings.HasPrefix(message, "!chart") {
 		message = strings.TrimPrefix(message, "!chart")
-		username := strings.TrimSpace(message)
-		return GenerateAlbumChart(username, network)
+		message = strings.TrimSpace(message)
+		msg := strings.SplitN(message, " ", 2)
+		var username string
+		period := "7d"
+		if len(msg) == 2 {
+			username = msg[0]
+			period = msg[1]
+		} else {
+			username = msg[0]
+		}
+		return GenerateAlbumChart(username, period, network)
 	}
 
 	if strings.HasPrefix(message, "!disco") {
