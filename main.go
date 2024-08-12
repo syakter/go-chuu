@@ -4,17 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	"image/png"
+	_ "image/png"
 	"io"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/fogleman/gg"
 	"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -213,6 +218,114 @@ func main() {
 	}()
 
 	client.Run()
+}
+
+func callWebServerAPI(username, period string) ([]byte, error) {
+	url := fmt.Sprintf("http://topster.gg/api/topalbums/%s/%s", username, period)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
+}
+
+func createAlbumChart(albums []struct {
+	Name   string `json:"name"`
+	Artist string `json:"artist"`
+	Image  string `json:"image"`
+}) (*gg.Context, error) {
+	const (
+		width  = 600
+		height = 600
+		rows   = 3
+		cols   = 3
+	)
+
+	dc := gg.NewContext(width, height)
+
+	for i, album := range albums[:9] { // Limit to 9 albums
+		x := float64(i%cols) * (float64(width) / float64(cols))
+		y := float64(i/cols) * (float64(height) / float64(rows))
+
+		// Download album art
+		resp, err := http.Get(album.Image)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		img, _, err := image.Decode(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		// Draw album art
+		dc.DrawImage(img, int(x), int(y))
+	}
+
+	return dc, nil
+}
+
+func GenerateAlbumChart(username string, network *lastfm.Api) slack.FileUploadParameters {
+	// Call the web server API
+	chartData, err := callWebServerAPI(username, "7day")
+	if err != nil {
+		logger.Error("Web server API call error", "error", err)
+		return slack.FileUploadParameters{}
+	}
+
+	// Parse the JSON response
+	var albums []struct {
+		Name   string `json:"name"`
+		Artist string `json:"artist"`
+		Image  string `json:"image"`
+	}
+	err = json.Unmarshal(chartData, &albums)
+	if err != nil {
+		logger.Error("JSON unmarshal error", "error", err)
+		return slack.FileUploadParameters{}
+	}
+
+	// Generate chart
+	chartContext, err := createAlbumChart(albums)
+	if err != nil {
+		logger.Error("Create album chart error", "error", err)
+		return slack.FileUploadParameters{}
+	}
+
+	// Get the image from the context
+	chartImage := chartContext.Image()
+
+	// Save chart as image
+	filename := fmt.Sprintf("%s_album_chart.png", username)
+	file, err := os.Create(filename)
+	if err != nil {
+		logger.Error("Error creating file", "error", err)
+		return slack.FileUploadParameters{}
+	}
+	defer file.Close()
+
+	err = png.Encode(file, chartImage)
+	if err != nil {
+		logger.Error("PNG encoding error", "error", err)
+		return slack.FileUploadParameters{}
+	}
+
+	params := slack.FileUploadParameters{
+		File:     filename,
+		Filename: filename,
+		Channels: []string{"C0392543PUY"},
+		Title:    fmt.Sprintf("Album chart for %s", username),
+	}
+
+	return params
 }
 
 func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string {
@@ -590,89 +703,6 @@ func GetWeeklyLeaderboard(network *lastfm.Api) string {
 	return res
 }
 
-func ChatGPT(prompt string) string {
-	outputFile, err := os.OpenFile("output.txt", os.O_RDWR|os.O_CREATE, 0755)
-	if err != nil {
-		logger.Error(err.Error())
-	}
-	defer outputFile.Close()
-	cmd := exec.Command("./main", "-t", "2", "-ngl", "32", "-m", "models/codellama.gguf", "-c", "4096", "--repeat_penalty", "1.1", "-n", "500", "-p", prompt)
-	cmd.Stdout = outputFile
-	err = cmd.Start()
-	if err != nil {
-		logger.Error("Failed to start command", "command", cmd.Path, "arguments", cmd.Args, "cmdError", cmd.Err, "err", err)
-	}
-	err = cmd.Wait()
-	if err != nil {
-		logger.Error("Failed to run command", "command", cmd.Path, "arguments", cmd.Args, "cmdError", cmd.Err, "err", err)
-	}
-
-	content, err := os.ReadFile("output.txt")
-	if err != nil {
-		logger.Error(err.Error())
-	}
-	return string(content)
-}
-
-// func GenerateCollage(username string) slack.FileUploadParameters {
-
-// 	collage := image.NewRGBA(image.Rect(0, 0, 900, 900))
-
-// 	tmpDir, err := os.MkdirTemp("", "collage")
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer os.RemoveAll(tmpDir)
-
-// 	imageURLs, err := getAlbumImages(username)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// Fetch and process images in order of most listened to least listened to
-// 	for i, url := range imageURLs {
-// 		if i >= 9 {
-// 			break
-// 		}
-
-// 		if url == "" {
-// 			continue
-// 		}
-
-// 		filename := filepath.Join(tmpDir, fmt.Sprintf("image%d.png", i))
-// 		if err := downloadImage(url, filename); err != nil {
-// 			fmt.Printf("Could not retrieve image: %s\n", filename)
-// 			continue
-// 		}
-
-// 		fmt.Printf("Successfully downloaded image: %s\n", filename)
-
-// 		img, _, err := image.DecodeFile(filename)
-// 		if err != nil {
-// 			fmt.Printf("Could not decode image: %s\n", filename)
-// 			continue
-// 		}
-
-// 		x := (i % 3) * 300
-// 		y := (i / 3) * 300
-// 		rect := image.Rect(x, y, x+300, y+300)
-// 		draw.Draw(collage, rect, img, image.Point{}, draw.Over)
-// 	}
-
-// 	outfile, err := os.Create("collage.png")
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer outfile.Close()
-
-// 	err = png.Encode(outfile, collage)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
 func ParseMessage(message string, network *lastfm.Api) any {
 	if message == "" {
 		return ""
@@ -699,11 +729,11 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		return uptime.String()
 	}
 
-	// if strings.HasPrefix(message, "!chart") {
-	// 	message = strings.TrimPrefix(message, "!chart")
-	// 	message = strings.TrimSpace(message)
-	// 	return GenerateCollage(message)
-	// }
+	if strings.HasPrefix(message, "!chart") {
+		message = strings.TrimPrefix(message, "!chart")
+		username := strings.TrimSpace(message)
+		return GenerateAlbumChart(username, network)
+	}
 
 	if strings.HasPrefix(message, "!disco") {
 		message = strings.TrimPrefix(message, "!disco")
