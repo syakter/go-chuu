@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/syakter/go-lastfm/lastfm"
+	"go-chuu/lastfm"
 )
 
 func GetRecentTracks(username string, limit int, network *lastfm.Api) string {
 	res := fmt.Sprintf("%s's last %d played songs:\n\n", username, limit)
-	result, err := network.User.GetRecentTracks(lastfm.P{"user": username, "limit": limit})
+	result, err := network.User.GetRecentTracks(lastfm.P{
+		"user":   username,
+		"limit":  limit,
+		"format": "json",
+	})
 	if err != nil {
 		logger.Error("GetRecentTracks error", "error", err)
 	}
@@ -49,7 +53,12 @@ func GetTopArtists(username, period string, network *lastfm.Api) string {
 		res += "of all time:\n\n"
 	}
 
-	result, err := network.User.GetTopArtists(lastfm.P{"user": username, "period": period, "limit": 10})
+	result, err := network.User.GetTopArtists(lastfm.P{
+		"user":   username,
+		"period": period,
+		"limit":  10,
+		"format": "json",
+	})
 	if err != nil {
 		logger.Error("GetTopAlbums error", "error", err)
 	}

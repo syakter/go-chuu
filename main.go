@@ -7,7 +7,6 @@ import (
 	"image"
 	_ "image/jpeg"
 	"image/png"
-	_ "image/png"
 	"io"
 	"log"
 	"log/slog"
@@ -21,6 +20,7 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/fatih/color"
 	"github.com/fogleman/gg"
+
 	//"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -100,12 +100,12 @@ type TrackCount struct {
 	Playcount int
 }
 
-var group = [21]string{
+var group = [23]string{
 	"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry",
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
 	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo",
-	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty",
+	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty", "tak08820", "Homiealmaya",
 }
 
 var startTime time.Time
@@ -179,10 +179,20 @@ func main() {
 						logger.Debug("ParseMessage", "result", r)
 						switch res := r.(type) {
 						case slack.FileUploadParameters:
+							filename := res.Filename
 							logger.Info("Uploading File")
 							_, err := slack_api.UploadFile(res)
 							if err != nil {
 								logger.Error("Error while uploading file", "error", err)
+							}
+							if filename != "" {
+								err = os.Remove(filename)
+								if err != nil {
+									logger.Error("Error while deleting file", "error", err)
+								} else {
+									logger.Info("File deleted successfully", "filename", filename)
+								}
+
 							}
 							elapsed := time.Since(start).String()
 							logger.Info("Time Elapsed", "time", elapsed)
@@ -226,6 +236,39 @@ func main() {
 }
 
 func callWebServerAPI(username, period string) ([]byte, error) {
+	url := fmt.Sprintf("http://topster.gg/api/topalbums/%s/%s", username, period)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP GET error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body error: %v", err)
+	}
+
+	// Log the response status code and body
+	logger.Debug("API Response", "status", resp.StatusCode, "body", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned non-200 status code: %d", resp.StatusCode)
+	}
+
+	// Check if the body is empty
+	if len(body) == 0 {
+		return nil, fmt.Errorf("API returned empty response")
+	}
+
+	// Check if the response is valid JSON
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("API returned invalid JSON: %s", string(body))
+	}
+
+	return body, nil
+}
+
+func callWebServerAPIDBroken(username, period string) ([]byte, error) {
 	url := fmt.Sprintf("http://topster.gg/api/topalbums/%s/%s", username, period)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -287,18 +330,18 @@ func GenerateAlbumChart(username string, period string, network *lastfm.Api) sla
 	switch period {
 	case "7d", "1w":
 		formattedPeriod = "7day"
-	case "1d":
-		formattedPeriod = "1day"
+	//case "1d":
+	//	formattedPeriod = "1day"
 	case "30d", "1m":
-		formattedPeriod = "30day"
+		formattedPeriod = "1month"
 	case "1y":
-		formattedPeriod = "365day"
+		formattedPeriod = "12month"
 	default:
 		formattedPeriod = "overall"
 	}
 	chartData, err := callWebServerAPI(username, formattedPeriod)
 	if err != nil {
-		logger.Error("Web server API call error", "error", err)
+		logger.Error("Web server API call error", "error", err.Error())
 		return slack.FileUploadParameters{}
 	}
 
@@ -310,14 +353,14 @@ func GenerateAlbumChart(username string, period string, network *lastfm.Api) sla
 	}
 	err = json.Unmarshal(chartData, &albums)
 	if err != nil {
-		logger.Error("JSON unmarshal error", "error", err)
+		logger.Error("JSON unmarshal error", "error", err.Error())
 		return slack.FileUploadParameters{}
 	}
 
 	// Generate chart
 	chartContext, err := createAlbumChart(albums)
 	if err != nil {
-		logger.Error("Create album chart error", "error", err)
+		logger.Error("Create album chart error", "error", err.Error())
 		return slack.FileUploadParameters{}
 	}
 
@@ -328,7 +371,7 @@ func GenerateAlbumChart(username string, period string, network *lastfm.Api) sla
 	filename := fmt.Sprintf("%s_album_chart.png", username)
 	file, err := os.Create(filename)
 	if err != nil {
-		logger.Error("Error creating file", "error", err)
+		logger.Error("Error creating file", "error", err.Error())
 		return slack.FileUploadParameters{}
 	}
 	defer file.Close()
@@ -541,11 +584,7 @@ func GetTopAlbumsAll(period string, network *lastfm.Api) string {
 				logger.Error("strconv error", "error", err)
 			}
 			albm := album{alb.Name, alb.Artist.Name}
-			if _, ok := m[albm]; ok {
-				m[albm] += count
-			} else {
-				m[albm] = count
-			}
+			m[albm] += count
 		}
 	}
 	keys := make([]album, 0, len(m))
@@ -605,11 +644,7 @@ func GetTopTracksAll(period string, network *lastfm.Api) string {
 				logger.Error("strconv error", "error", err)
 			}
 			tr := Track{track.Name, track.Artist.Name}
-			if _, ok := m[tr]; ok {
-				m[tr] += count
-			} else {
-				m[tr] = count
-			}
+			m[tr] += count
 		}
 	}
 	keys := make([]Track, 0, len(m))
