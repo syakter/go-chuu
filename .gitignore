@@ -1,12 +1,65 @@
-.DS_Store
-.env
-.venv/
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 go-chuu
-collage.png
-log
-init.sql
-.vscode/
-chuu.exe
-discord/
-main
 
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application logs
+*.log
+logs/
+
+# Temporary files
+/tmp/
+/temp/
+*.tmp
+
+# Release builds
+dist/
+
+# Docker volumes
+data/
+
+# Generated files
+*.png
+*.jpg
+*.jpeg
+*_chart.png
+
+# Cache directories
+.cache/
