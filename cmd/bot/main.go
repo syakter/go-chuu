@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+<<<<<<< HEAD
 	"github.com/joho/godotenv"
+=======
+>>>>>>> b343f58 (major refactor: modernize architecture and add comprehensive improvements)
 	"github.com/syakter/go-chuu/internal/cache"
 	"github.com/syakter/go-chuu/internal/charts"
 	"github.com/syakter/go-chuu/internal/commands"
@@ -77,6 +80,7 @@ func main() {
 }
 
 func run() error {
+<<<<<<< HEAD
 	// Load .env file if it exists (ignore error if file doesn't exist)
 	if err := godotenv.Load(); err != nil {
 		// Only log debug message, don't fail - environment variables might be set directly
@@ -91,6 +95,10 @@ func run() error {
 		// If embedded loading fails, try regular loading for backwards compatibility
 		cfg, err = config.Load()
 	}
+=======
+	// Load configuration
+	cfg, err := config.Load()
+>>>>>>> b343f58 (major refactor: modernize architecture and add comprehensive improvements)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -121,7 +129,11 @@ func run() error {
 
 	// Create charts generator
 	tempDir := filepath.Join(os.TempDir(), "go-chuu-charts")
+<<<<<<< HEAD
 	chartGen := charts.NewGenerator(logger, tempDir, lastfmClient.GetAPI())
+=======
+	chartGen := charts.NewGenerator(logger, tempDir)
+>>>>>>> b343f58 (major refactor: modernize architecture and add comprehensive improvements)
 	if err := chartGen.EnsureTempDir(); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
