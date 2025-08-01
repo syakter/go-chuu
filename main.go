@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"image"
+
+	// "image"
 	_ "image/jpeg"
-	"image/png"
+	// "image/png"
 	_ "image/png"
 	"io"
 	"log"
@@ -18,9 +19,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disintegration/imaging"
+	// "github.com/disintegration/imaging"
 	"github.com/fatih/color"
-	"github.com/fogleman/gg"
+	// "github.com/fogleman/gg"
+
 	//"github.com/joho/godotenv"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -100,12 +102,12 @@ type TrackCount struct {
 	Playcount int
 }
 
-var group = [21]string{
+var group = [24]string{
 	"Codeine_turtle", "odesmut", "dudeactually",
 	"z47Breezo", "itsalmostdry",
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
 	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo",
-	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty",
+	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty", "gagieboy", "tak08820", "Homiealmaya",
 }
 
 var startTime time.Time
@@ -249,17 +251,17 @@ func callWebServerAPI(username, period string) ([]byte, error) {
 	return body, nil
 }
 
-func createAlbumChart(albums []struct {
-	Name   string `json:"name"`
-	Artist string `json:"artist"`
-	Image  string `json:"image"`
-}) (*gg.Context, error) {
-	const (
-		width  = 900
-		height = 900
-		rows   = 3
-		cols   = 3
-	)
+// func createAlbumChart(albums []struct {
+// 	Name   string `json:"name"`
+// 	Artist string `json:"artist"`
+// 	Image  string `json:"image"`
+// }) (*gg.Context, error) {
+// 	const (
+// 		width  = 900
+// 		height = 900
+// 		rows   = 3
+// 		cols   = 3
+// 	)
 
 	dc := gg.NewContext(width, height)
 	// Set background color to white
@@ -302,81 +304,81 @@ func createAlbumChart(albums []struct {
 			continue
 		}
 
-		resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
-		// Draw album art
-		dc.DrawImage(resizedImg, int(x), int(y))
-	}
+// 		resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
+// 		// Draw album art
+// 		dc.DrawImage(resizedImg, int(x), int(y))
+// 	}
 
-	return dc, nil
-}
+// 	return dc, nil
+// }
 
-func GenerateAlbumChart(username string, period string, network *lastfm.Api) slack.FileUploadParameters {
-	// Call the web server API
-	formattedPeriod := "7day"
-	switch period {
-	case "7d", "1w":
-		formattedPeriod = "7day"
-	case "1d":
-		formattedPeriod = "1day"
-	case "30d", "1m":
-		formattedPeriod = "30day"
-	case "1y":
-		formattedPeriod = "365day"
-	default:
-		formattedPeriod = "overall"
-	}
-	chartData, err := callWebServerAPI(username, formattedPeriod)
-	if err != nil {
-		logger.Error("Web server API call error", "error", err)
-		return slack.FileUploadParameters{}
-	}
+// func GenerateAlbumChart(username string, period string, network *lastfm.Api) slack.FileUploadParameters {
+// 	// Call the web server API
+// 	formattedPeriod := "7day"
+// 	switch period {
+// 	case "7d", "1w":
+// 		formattedPeriod = "7day"
+// 	case "1d":
+// 		formattedPeriod = "1day"
+// 	case "30d", "1m":
+// 		formattedPeriod = "30day"
+// 	case "1y":
+// 		formattedPeriod = "365day"
+// 	default:
+// 		formattedPeriod = "overall"
+// 	}
+// 	chartData, err := callWebServerAPI(username, formattedPeriod)
+// 	if err != nil {
+// 		logger.Error("Web server API call error", "error", err)
+// 		return slack.FileUploadParameters{}
+// 	}
 
-	// Parse the JSON response
-	var albums []struct {
-		Name   string `json:"name"`
-		Artist string `json:"artist"`
-		Image  string `json:"image"`
-	}
-	err = json.Unmarshal(chartData, &albums)
-	if err != nil {
-		logger.Error("JSON unmarshal error", "error", err)
-		return slack.FileUploadParameters{}
-	}
+// 	// Parse the JSON response
+// 	var albums []struct {
+// 		Name   string `json:"name"`
+// 		Artist string `json:"artist"`
+// 		Image  string `json:"image"`
+// 	}
+// 	err = json.Unmarshal(chartData, &albums)
+// 	if err != nil {
+// 		logger.Error("JSON unmarshal error", "error", err)
+// 		return slack.FileUploadParameters{}
+// 	}
 
-	// Generate chart
-	chartContext, err := createAlbumChart(albums)
-	if err != nil {
-		logger.Error("Create album chart error", "error", err)
-		return slack.FileUploadParameters{}
-	}
+// 	// Generate chart
+// 	chartContext, err := createAlbumChart(albums)
+// 	if err != nil {
+// 		logger.Error("Create album chart error", "error", err)
+// 		return slack.FileUploadParameters{}
+// 	}
 
-	// Get the image from the context
-	chartImage := chartContext.Image()
+// 	// Get the image from the context
+// 	chartImage := chartContext.Image()
 
-	// Save chart as image
-	filename := fmt.Sprintf("%s_album_chart.png", username)
-	file, err := os.Create(filename)
-	if err != nil {
-		logger.Error("Error creating file", "error", err)
-		return slack.FileUploadParameters{}
-	}
-	defer file.Close()
+// 	// Save chart as image
+// 	filename := fmt.Sprintf("%s_album_chart.png", username)
+// 	file, err := os.Create(filename)
+// 	if err != nil {
+// 		logger.Error("Error creating file", "error", err)
+// 		return slack.FileUploadParameters{}
+// 	}
+// 	defer file.Close()
 
-	err = png.Encode(file, chartImage)
-	if err != nil {
-		logger.Error("PNG encoding error", "error", err)
-		return slack.FileUploadParameters{}
-	}
+// 	err = png.Encode(file, chartImage)
+// 	if err != nil {
+// 		logger.Error("PNG encoding error", "error", err)
+// 		return slack.FileUploadParameters{}
+// 	}
 
-	params := slack.FileUploadParameters{
-		File:     filename,
-		Filename: filename,
-		Channels: []string{"C0392543PUY"},
-		Title:    fmt.Sprintf("Album chart for %s", username),
-	}
+// 	params := slack.FileUploadParameters{
+// 		File:     filename,
+// 		Filename: filename,
+// 		Channels: []string{"C0392543PUY"},
+// 		Title:    fmt.Sprintf("Album chart for %s", username),
+// 	}
 
-	return params
-}
+// 	return params
+// }
 
 func GetTrackScrobbles(artistName, trackName string, network *lastfm.Api) string {
 	logger.Debug("GetTrackScrobbles", "artistName", artistName, "trackName", trackName)
@@ -771,20 +773,20 @@ func ParseMessage(message string, network *lastfm.Api) any {
 		return uptime.String()
 	}
 
-	if strings.HasPrefix(message, "!chart") {
-		message = strings.TrimPrefix(message, "!chart")
-		message = strings.TrimSpace(message)
-		msg := strings.SplitN(message, " ", 2)
-		var username string
-		period := "7d"
-		if len(msg) == 2 {
-			username = msg[0]
-			period = msg[1]
-		} else {
-			username = msg[0]
-		}
-		return GenerateAlbumChart(username, period, network)
-	}
+	// if strings.HasPrefix(message, "!chart") {
+	// 	message = strings.TrimPrefix(message, "!chart")
+	// 	message = strings.TrimSpace(message)
+	// 	msg := strings.SplitN(message, " ", 2)
+	// 	var username string
+	// 	period := "7d"
+	// 	if len(msg) == 2 {
+	// 		username = msg[0]
+	// 		period = msg[1]
+	// 	} else {
+	// 		username = msg[0]
+	// 	}
+	// 	return GenerateAlbumChart(username, period, network)
+	// }
 
 	if strings.HasPrefix(message, "!disco") {
 		message = strings.TrimPrefix(message, "!disco")
