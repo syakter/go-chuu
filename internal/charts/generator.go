@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -316,14 +317,15 @@ func (g *Generator) createAlbumChart(ctx context.Context, albums []types.Album) 
 			dc.SetRGB(0.3, 0.3, 0.3)
 			dc.DrawRectangle(x, y, float64(albumWidth), float64(albumHeight))
 			dc.Fill()
-			continue
+		} else {
+			// Resize to fit grid cell
+			resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
+			// Draw album art
+			dc.DrawImage(resizedImg, int(x), int(y))
 		}
 
-		// Resize to fit grid cell
-		resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
-
-		// Draw album art
-		dc.DrawImage(resizedImg, int(x), int(y))
+		// Add text overlay
+		g.drawTextOverlay(dc, album, x, y, float64(albumWidth), float64(albumHeight))
 	}
 
 	return dc.Image(), nil
@@ -356,6 +358,68 @@ func (g *Generator) downloadAlbumArt(ctx context.Context, imageURL string) (imag
 	}
 
 	return img, nil
+}
+
+// drawTextOverlay draws album and artist text over the album cover
+func (g *Generator) drawTextOverlay(dc *gg.Context, album types.Album, x, y, width, height float64) {
+	// Set up text styling
+	if err := dc.LoadFontFace("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16); err != nil {
+		// Fallback: try to load a system font or use default
+		if err2 := dc.LoadFontFace("/System/Library/Fonts/Arial.ttf", 16); err2 != nil {
+			// If no system fonts available, continue with default (will use basic rendering)
+			g.logger.Debug("No system fonts available, using default text rendering")
+		}
+	}
+
+	// Prepare text content
+	artistText := g.truncateText(album.Artist, 25)
+	albumText := g.truncateText(album.Name, 25)
+
+	// Calculate text position (bottom of the album square)
+	textX := x + width/2     // Center horizontally
+	textY := y + height - 10 // Near bottom
+
+	// Draw semi-transparent background for text readability
+	textBgHeight := 50.0
+	dc.SetRGBA(0, 0, 0, 0.7) // Semi-transparent black
+	dc.DrawRectangle(x, y+height-textBgHeight, width, textBgHeight)
+	dc.Fill()
+
+	// Draw artist name (upper line)
+	dc.SetRGB(1, 1, 1) // White text
+	dc.DrawStringAnchored(artistText, textX, textY-20, 0.5, 0.5)
+
+	// Draw album name (lower line)
+	dc.SetRGB(0.9, 0.9, 0.9) // Slightly dimmer white
+	dc.DrawStringAnchored(albumText, textX, textY-5, 0.5, 0.5)
+}
+
+// truncateText truncates text to fit within specified length
+func (g *Generator) truncateText(text string, maxLength int) string {
+	if len(text) <= maxLength {
+		return text
+	}
+
+	// Find a good place to cut (prefer word boundaries)
+	words := strings.Fields(text)
+	result := ""
+
+	for _, word := range words {
+		if len(result+" "+word) > maxLength-3 { // Reserve space for "..."
+			break
+		}
+		if result != "" {
+			result += " "
+		}
+		result += word
+	}
+
+	if result == "" {
+		// If even the first word is too long, truncate it
+		result = text[:maxLength-3]
+	}
+
+	return result + "..."
 }
 
 // formatPeriodForAPI formats period for the Last.fm API

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,4 +155,87 @@ func TestGenerator_DownloadAlbumArt(t *testing.T) {
 	} else if img == nil {
 		t.Error("Downloaded image is nil")
 	}
+}
+
+func TestGenerator_TruncateText(t *testing.T) {
+	tempDir := filepath.Join(os.TempDir(), "test-charts")
+	lastfmAPI := lastfm.New("test-key", "test-secret")
+	generator := NewGenerator(nil, tempDir, lastfmAPI)
+
+	tests := []struct {
+		input     string
+		maxLength int
+		expected  string
+	}{
+		{"Short Album", 20, "Short Album"},
+		{"This is a very long album name that should be truncated", 20, "This is a very long..."},
+		{"Single", 10, "Single"},
+		{"OneVeryLongWordThatCantBeSplit", 15, "OneVeryLongW..."},
+		{"Multiple Words Here", 15, "Multiple Words..."},
+		{"", 10, "..."},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("'%s'_max_%d", test.input, test.maxLength), func(t *testing.T) {
+			result := generator.truncateText(test.input, test.maxLength)
+			if len(result) > test.maxLength {
+				t.Errorf("Result too long: got %d chars, max %d", len(result), test.maxLength)
+			}
+			if test.input != "" && len(test.input) > test.maxLength && !strings.HasSuffix(result, "...") {
+				t.Errorf("Expected truncated text to end with '...', got: %s", result)
+			}
+		})
+	}
+}
+
+func TestGenerator_CreateAlbumChartWithText(t *testing.T) {
+	// Test that chart creation works with text overlays
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	tempDir := filepath.Join(os.TempDir(), "test-charts-text")
+	lastfmAPI := lastfm.New("test-key", "test-secret")
+
+	generator := NewGenerator(logger, tempDir, lastfmAPI)
+
+	err := generator.EnsureTempDir()
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+
+	// Test with albums that have different text lengths
+	mockAlbums := []types.Album{
+		{
+			Name:   "Short",
+			Artist: "Artist",
+			Image:  "", // No image to test text over placeholder
+		},
+		{
+			Name:   "This is a very long album name that should be truncated properly",
+			Artist: "This is also a very long artist name that needs truncation",
+			Image:  "https://httpbin.org/image/png",
+		},
+		{
+			Name:   "Medium Album Name",
+			Artist: "Medium Artist",
+			Image:  "",
+		},
+	}
+
+	ctx := context.Background()
+	chartImage, err := generator.createAlbumChart(ctx, mockAlbums)
+	if err != nil {
+		t.Fatalf("Failed to create album chart with text: %v", err)
+	}
+
+	if chartImage == nil {
+		t.Fatal("Chart image is nil")
+	}
+
+	// Check image dimensions
+	bounds := chartImage.Bounds()
+	if bounds.Dx() != 900 || bounds.Dy() != 900 {
+		t.Errorf("Expected image dimensions 900x900, got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+
+	// Clean up
+	os.RemoveAll(tempDir)
 }
