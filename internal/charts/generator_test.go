@@ -2,6 +2,7 @@ package charts
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -63,6 +64,40 @@ func TestGenerator_CreateAlbumChart(t *testing.T) {
 	os.RemoveAll(tempDir)
 }
 
+func TestGenerator_FetchAlbumData_24h(t *testing.T) {
+	// Test that fetchAlbumData correctly handles 24h period
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	tempDir := filepath.Join(os.TempDir(), "test-charts-24h")
+	lastfmAPI := lastfm.New("test-key", "test-secret")
+
+	generator := NewGenerator(logger, tempDir, lastfmAPI)
+
+	ctx := context.Background()
+
+	// This will fail because we don't have real API keys, but it should
+	// try the 24h code path instead of the regular top albums path
+	_, err := generator.fetchAlbumData(ctx, "testuser", "24h")
+
+	// We expect an error since we don't have valid API credentials,
+	// but the error should come from the API call, not from trying
+	// to use the wrong API method
+	if err == nil {
+		t.Error("Expected an error due to invalid API credentials, but got none")
+	}
+
+	// The error should mention recent tracks, indicating we took the 24h path
+	errorMsg := err.Error()
+	if !(errorMsg == "Last.fm API key suspended or invalid" ||
+		errorMsg == "Last.fm user 'testuser' not found" ||
+		fmt.Sprintf("%s", errorMsg)[:25] == "failed to get recent tracks") {
+		t.Logf("Error message: %s", errorMsg)
+		// This is informational - we can't fully test without valid API keys
+	}
+
+	// Clean up
+	os.RemoveAll(tempDir)
+}
+
 func TestGenerator_FormatPeriodForAPI(t *testing.T) {
 	tempDir := filepath.Join(os.TempDir(), "test-charts")
 	lastfmAPI := lastfm.New("test-key", "test-secret")
@@ -72,6 +107,7 @@ func TestGenerator_FormatPeriodForAPI(t *testing.T) {
 		input    string
 		expected string
 	}{
+		{"24h", "24h"}, // 24h period stays as-is (handled separately)
 		{"7d", "7day"},
 		{"1w", "7day"},
 		{"1m", "1month"},

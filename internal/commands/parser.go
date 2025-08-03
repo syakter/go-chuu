@@ -296,7 +296,7 @@ func (p *Parser) isValidUser(user string) bool {
 
 // isValidPeriod checks if a period is valid
 func (p *Parser) isValidPeriod(period string) bool {
-	validPeriods := []string{"7d", "1w", "1m", "30d", "3m", "90d", "6m", "180d", "1y", "365d", "overall"}
+	validPeriods := []string{"24h", "7d", "1w", "1m", "30d", "3m", "90d", "6m", "180d", "1y", "365d", "overall"}
 	period = strings.ToLower(period)
 
 	for _, valid := range validPeriods {
@@ -344,7 +344,7 @@ func GetHelpText() string {
 		`!up: Bot uptime
 
 ` +
-		`Periods: 7d, 1m, 3m, 6m, 1y, overall`
+		`Periods: 24h, 7d, 1m, 3m, 6m, 1y, overall`
 }
 
 // splitOnLastBy splits a string on the last occurrence of " by " (case insensitive)

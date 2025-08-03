@@ -46,6 +46,17 @@ func TestParser_Parse(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:  "chart command with 24h period",
+			input: "!chart user1 24h",
+			expected: &types.Command{
+				Type:     types.CommandChart,
+				User:     "user1",
+				Period:   "24h",
+				RawInput: "!chart user1 24h",
+			},
+			wantErr: false,
+		},
+		{
 			name:  "top tracks command",
 			input: "!track testuser 1m",
 			expected: &types.Command{
@@ -261,7 +272,7 @@ func TestParser_cleanMessage(t *testing.T) {
 func TestIsValidPeriod(t *testing.T) {
 	parser := NewParser([]string{"user1"})
 
-	validPeriods := []string{"7d", "1w", "1m", "30d", "3m", "90d", "6m", "180d", "1y", "365d", "overall"}
+	validPeriods := []string{"24h", "7d", "1w", "1m", "30d", "3m", "90d", "6m", "180d", "1y", "365d", "overall"}
 	invalidPeriods := []string{"invalid", "2w", "5m", ""}
 
 	for _, period := range validPeriods {

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -86,6 +88,11 @@ func (g *Generator) GenerateAlbumChart(ctx context.Context, username, period str
 
 // fetchAlbumData fetches album data from the Last.fm API
 func (g *Generator) fetchAlbumData(ctx context.Context, username, period string) ([]types.Album, error) {
+	// Handle 24h period differently - use recent tracks instead of top albums
+	if period == "24h" {
+		return g.fetchAlbumsFromRecentTracks(ctx, username)
+	}
+
 	formattedPeriod := g.formatPeriodForAPI(period)
 
 	result, err := g.lastfmAPI.User.GetTopAlbums(lastfm.P{
@@ -133,6 +140,145 @@ func (g *Generator) fetchAlbumData(ctx context.Context, username, period string)
 	}
 
 	return albums, nil
+}
+
+// fetchAlbumsFromRecentTracks fetches albums from recent tracks in the past 24 hours
+func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username string) ([]types.Album, error) {
+	g.logger.Debug("Fetching albums from recent tracks for 24h period", "username", username)
+
+	// Calculate 24 hours ago timestamp
+	twentyFourHoursAgo := time.Now().Add(-24 * time.Hour)
+	fromTimestamp := strconv.FormatInt(twentyFourHoursAgo.Unix(), 10)
+
+	// We'll need to paginate through recent tracks to get enough data
+	albumCounts := make(map[string]*albumInfo)
+	page := 1
+	const tracksPerPage = 200 // Max allowed by Last.fm API
+	const maxPages = 10       // Limit to prevent infinite loops
+
+	for page <= maxPages {
+		result, err := g.lastfmAPI.User.GetRecentTracks(lastfm.P{
+			"user":  username,
+			"limit": strconv.Itoa(tracksPerPage),
+			"page":  strconv.Itoa(page),
+			"from":  fromTimestamp,
+		})
+		if err != nil {
+			// Check for common Last.fm API errors
+			if lastfmErr, ok := err.(*lastfm.LastfmError); ok {
+				switch lastfmErr.Code {
+				case 6: // User not found
+					return nil, fmt.Errorf("Last.fm user '%s' not found", username)
+				case 26: // API key suspended
+					return nil, fmt.Errorf("Last.fm API key suspended or invalid")
+				case 29: // Rate limit exceeded
+					return nil, fmt.Errorf("Last.fm API rate limit exceeded, please try again later")
+				default:
+					return nil, fmt.Errorf("Last.fm API error: %s", lastfmErr.Message)
+				}
+			}
+			return nil, fmt.Errorf("failed to get recent tracks from Last.fm: %w", err)
+		}
+
+		if len(result.Tracks) == 0 {
+			break // No more tracks
+		}
+
+		// Process tracks and aggregate by album
+		for _, track := range result.Tracks {
+			// Skip tracks without album information
+			if track.Album.Name == "" || track.Artist.Name == "" {
+				continue
+			}
+
+			// Skip now playing tracks (they don't have timestamps)
+			if track.NowPlaying == "true" {
+				continue
+			}
+
+			// Check if track is within 24 hours (additional safety check)
+			if track.Date.Uts != "" {
+				uts, err := strconv.ParseInt(track.Date.Uts, 10, 64)
+				if err == nil {
+					trackTime := time.Unix(uts, 0)
+					if trackTime.Before(twentyFourHoursAgo) {
+						continue // Track is older than 24 hours
+					}
+				}
+			}
+
+			// Create album key (artist + album name for uniqueness)
+			albumKey := track.Artist.Name + " - " + track.Album.Name
+
+			if albumData, exists := albumCounts[albumKey]; exists {
+				albumData.playCount++
+			} else {
+				// Find the largest image URL
+				imageURL := ""
+				for _, img := range track.Images {
+					if img.Size == "large" || img.Size == "extralarge" {
+						imageURL = img.Url
+						break
+					}
+				}
+				// Fallback to any available image
+				if imageURL == "" && len(track.Images) > 0 {
+					imageURL = track.Images[len(track.Images)-1].Url
+				}
+
+				albumCounts[albumKey] = &albumInfo{
+					album: types.Album{
+						Name:   track.Album.Name,
+						Artist: track.Artist.Name,
+						Image:  imageURL,
+					},
+					playCount: 1,
+				}
+			}
+		}
+
+		// If we got fewer tracks than requested, we've reached the end
+		if len(result.Tracks) < tracksPerPage {
+			break
+		}
+
+		page++
+	}
+
+	if len(albumCounts) == 0 {
+		return nil, fmt.Errorf("no albums found in the past 24 hours for user '%s'", username)
+	}
+
+	// Convert map to slice and sort by play count
+	var albumList []albumInfo
+	for _, albumData := range albumCounts {
+		albumList = append(albumList, *albumData)
+	}
+
+	// Sort by play count (descending)
+	sort.Slice(albumList, func(i, j int) bool {
+		return albumList[i].playCount > albumList[j].playCount
+	})
+
+	// Take top 9 albums for 3x3 grid
+	var albums []types.Album
+	limit := 9
+	if len(albumList) < limit {
+		limit = len(albumList)
+	}
+
+	for i := 0; i < limit; i++ {
+		albums = append(albums, albumList[i].album)
+	}
+
+	g.logger.Debug("Found albums from recent tracks", "count", len(albums), "total_unique_albums", len(albumList))
+	return albums, nil
+}
+
+// albumInfo holds album data with play count for sorting
+type albumInfo struct {
+	album     types.Album
+	playCount int
 }
 
 // createAlbumChart creates a 3x3 chart image from album data
@@ -215,6 +361,8 @@ func (g *Generator) downloadAlbumArt(ctx context.Context, imageURL string) (imag
 // formatPeriodForAPI formats period for the Last.fm API
 func (g *Generator) formatPeriodForAPI(period string) string {
 	switch period {
+	case "24h":
+		return "24h" // Special case - handled by fetchAlbumsFromRecentTracks
 	case "7d", "1w":
 		return "7day"
 	case "1m", "30d":
