@@ -12,6 +12,7 @@ A sophisticated multi-platform bot that provides music statistics and social fea
 - **Group Stats** (`!kga`, `!kgt`): See the most popular content across your entire group
 - **Leaderboards** (`!leaderboard`): Weekly scrobble competitions
 - **Visual Charts** (`!chart`): Generate beautiful 3x3 album artwork grids
+- **Listening Club** (`!lc`): Weekly community album listening and voting system
 
 ### 🚀 Technical Features
 - **High Performance**: Parallel API processing with configurable concurrency limits
@@ -121,7 +122,31 @@ docker run --env-file .env --network=host go-chuu
 - `!disco username artist` - User's top albums by specific artist
 - `!dt username artist` - User's top tracks by specific artist
 
+### 📚 Listening Club
+- `!lc set Artist - Album` - Set the weekly listening club album
+- `!lc vote <1-10> [comment]` - Vote on the current album (1-10 scale)
+- `!lc current` - Show current listening club album and voting info
+- `!lc results` - Display voting results with statistics and comments
+- `!lc clear` - Clear current week (admin function)
+
 **Time Periods**: `7d`, `1m`, `3m`, `6m`, `1y`, `overall`
+
+#### How Listening Club Works
+
+1. **Set Weekly Album**: Any member can set the week's listening club album
+2. **Listen & Vote**: Members listen to the album and vote on a 1-10 scale
+3. **Add Comments**: Optional comments provide context for ratings
+4. **View Results**: See average ratings, vote distribution, and individual comments
+5. **Weekly Reset**: Albums are tied to calendar weeks (Monday-Sunday)
+6. **Cross-Platform**: Works on both Slack and Discord with unified voting
+
+**Example Usage:**
+```
+!lc set Radiohead - OK Computer
+!lc vote 9 One of the greatest albums ever made!
+!lc current
+!lc results
+```
 
 ## Platform Setup 🔧
 

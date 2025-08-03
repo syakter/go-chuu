@@ -422,3 +422,111 @@ func TestParser_splitOnLastBy(t *testing.T) {
 		})
 	}
 }
+
+func TestParser_ListeningClubCommands(t *testing.T) {
+	parser := NewParser([]string{"testuser"})
+
+	tests := []struct {
+		name     string
+		input    string
+		expected types.CommandType
+		wantErr  bool
+	}{
+		{"lc set command", "!lc set Radiohead - OK Computer", types.CommandLCSet, false},
+		{"lc vote command", "!lc vote 8 Great album!", types.CommandLCVote, false},
+		{"lc current command", "!lc current", types.CommandLCCurrent, false},
+		{"lc results command", "!lc results", types.CommandLCResults, false},
+		{"lc clear command", "!lc clear", types.CommandLCClear, false},
+		{"lc invalid subcommand", "!lc invalid", types.CommandUnknown, true},
+		{"lc no subcommand", "!lc", types.CommandUnknown, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parser.Parse(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && cmd.Type != tt.expected {
+				t.Errorf("Parse() command type = %v, expected %v", cmd.Type, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParser_LCSetCommand(t *testing.T) {
+	parser := NewParser([]string{"testuser"})
+
+	tests := []struct {
+		name           string
+		input          string
+		expectedArtist string
+		expectedAlbum  string
+		wantErr        bool
+	}{
+		{"basic set", "!lc set Radiohead - OK Computer", "Radiohead", "OK Computer", false},
+		{"with spaces", "!lc set Pink Floyd - The Dark Side of the Moon", "Pink Floyd", "The Dark Side of the Moon", false},
+		{"missing dash", "!lc set Radiohead OK Computer", "", "", true},
+		{"empty artist", "!lc set  - OK Computer", "", "", true},
+		{"empty album", "!lc set Radiohead - ", "", "", true},
+		{"no args", "!lc set", "", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parser.Parse(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if cmd.Artist != tt.expectedArtist {
+					t.Errorf("Expected artist '%s', got '%s'", tt.expectedArtist, cmd.Artist)
+				}
+				if cmd.Album != tt.expectedAlbum {
+					t.Errorf("Expected album '%s', got '%s'", tt.expectedAlbum, cmd.Album)
+				}
+			}
+		})
+	}
+}
+
+func TestParser_LCVoteCommand(t *testing.T) {
+	parser := NewParser([]string{"testuser"})
+
+	tests := []struct {
+		name            string
+		input           string
+		expectedRating  int
+		expectedComment string
+		wantErr         bool
+	}{
+		{"rating only", "!lc vote 8", 8, "", false},
+		{"rating with comment", "!lc vote 7 Great album, love it!", 7, "Great album, love it!", false},
+		{"invalid rating high", "!lc vote 11", 0, "", true},
+		{"invalid rating low", "!lc vote 0", 0, "", true},
+		{"invalid rating text", "!lc vote great", 0, "", true},
+		{"no rating", "!lc vote", 0, "", true},
+		{"valid rating 1", "!lc vote 1 Not for me", 1, "Not for me", false},
+		{"valid rating 10", "!lc vote 10 Perfect!", 10, "Perfect!", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parser.Parse(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if cmd.Rating != tt.expectedRating {
+					t.Errorf("Expected rating %d, got %d", tt.expectedRating, cmd.Rating)
+				}
+				if cmd.Comment != tt.expectedComment {
+					t.Errorf("Expected comment '%s', got '%s'", tt.expectedComment, cmd.Comment)
+				}
+			}
+		})
+	}
+}

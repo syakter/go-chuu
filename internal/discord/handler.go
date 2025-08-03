@@ -120,7 +120,7 @@ func (h *Handler) handleMessageCreate(s *discordgo.Session, m *discordgo.Message
 	}
 
 	// Process the command
-	response := h.ProcessCommand(cmdCtx, cmd)
+	response := h.processCommand(cmdCtx, cmd, m.Author.ID, m.Author.Username)
 
 	// Send the response
 	h.sendResponse(m.ChannelID, response)
@@ -219,4 +219,44 @@ func (h *Handler) SendErrorResponse(ctx context.Context, channelID string, err e
 	errorMessage := errors.GetUserFriendlyMessage(err)
 	_, sendErr := h.session.ChannelMessageSend(channelID, errorMessage)
 	return sendErr
+}
+
+// processCommand wraps the base ProcessCommand with Discord-specific user context
+func (h *Handler) processCommand(ctx context.Context, cmd *types.Command, userID, username string) *types.BotResponse {
+	// Handle listening club vote command with user context
+	if cmd.Type == types.CommandLCVote {
+		return h.handleLCVote(ctx, cmd, userID, username)
+	}
+
+	// For all other commands, use the base handler
+	return h.ProcessCommand(ctx, cmd)
+}
+
+// handleLCVote handles listening club voting with Discord user context
+func (h *Handler) handleLCVote(ctx context.Context, cmd *types.Command, userID, username string) *types.BotResponse {
+	if cmd.Rating < 1 || cmd.Rating > 10 {
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Rating must be between 1 and 10",
+		}
+	}
+
+	// Use the listening club service with proper user context
+	if err := h.ListeningClub.Vote("discord", userID, username, cmd.Rating, cmd.Comment); err != nil {
+		h.logger.Error("Failed to record vote", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to record vote: " + err.Error(),
+		}
+	}
+
+	response := fmt.Sprintf("✅ Your vote of %d/10 has been recorded!", cmd.Rating)
+	if cmd.Comment != "" {
+		response += fmt.Sprintf("\nComment: %s", cmd.Comment)
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: response,
+	}
 }

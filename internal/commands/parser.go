@@ -146,6 +146,10 @@ func (p *Parser) parseCommand(command *types.Command, message string) error {
 		command.Type = types.CommandTrackFans
 		return p.parseTrackQuery(command, strings.Join(args, " "))
 
+	// Listening Club commands
+	case "!lc":
+		return p.parseListeningClubCommand(command, args)
+
 	default:
 		return errors.NewValidationError("unknown command: " + cmdStr)
 	}
@@ -344,6 +348,19 @@ func GetHelpText() string {
 		`!up: Bot uptime
 
 ` +
+		`📚 Listening Club:
+` +
+		`!lc set Artist - Album: Set the weekly listening club album
+` +
+		`!lc vote <1-10> [comment]: Vote on the current album
+` +
+		`!lc current: Show current listening club album
+` +
+		`!lc results: Show voting results for current album
+` +
+		`!lc clear: Clear current week (admin only)
+
+` +
 		`Periods: 24h, 7d, 1m, 3m, 6m, 1y, overall`
 }
 
@@ -369,4 +386,89 @@ func (p *Parser) splitOnLastBy(message string) (before, after string, found bool
 	before = strings.TrimSpace(message[:lastIndex])
 	after = strings.TrimSpace(message[lastIndex+4:]) // +4 for " by " or " By "
 	return before, after, before != "" && after != ""
+}
+
+// parseListeningClubCommand parses listening club subcommands
+func (p *Parser) parseListeningClubCommand(command *types.Command, args []string) error {
+	if len(args) == 0 {
+		return errors.NewValidationError("listening club command requires a subcommand (set, vote, current, results, clear)")
+	}
+
+	subcmd := strings.ToLower(args[0])
+	subArgs := args[1:]
+
+	switch subcmd {
+	case "set":
+		command.Type = types.CommandLCSet
+		return p.parseLCSetArgs(command, subArgs)
+
+	case "vote":
+		command.Type = types.CommandLCVote
+		return p.parseLCVoteArgs(command, subArgs)
+
+	case "current":
+		command.Type = types.CommandLCCurrent
+
+	case "results":
+		command.Type = types.CommandLCResults
+
+	case "clear":
+		command.Type = types.CommandLCClear
+
+	default:
+		return errors.NewValidationError("unknown listening club subcommand: " + subcmd + " (valid: set, vote, current, results, clear)")
+	}
+
+	return nil
+}
+
+// parseLCSetArgs parses listening club set command arguments
+func (p *Parser) parseLCSetArgs(command *types.Command, args []string) error {
+	if len(args) == 0 {
+		return errors.NewValidationError("listening club set requires: !lc set Artist - Album")
+	}
+
+	// Join all args and look for the dash separator
+	fullText := strings.Join(args, " ")
+
+	// Split on " - " to separate artist and album
+	parts := strings.Split(fullText, " - ")
+	if len(parts) != 2 {
+		return errors.NewValidationError("listening club set format: !lc set Artist - Album")
+	}
+
+	command.Artist = strings.TrimSpace(parts[0])
+	command.Album = strings.TrimSpace(parts[1])
+
+	if command.Artist == "" || command.Album == "" {
+		return errors.NewValidationError("both artist and album are required")
+	}
+
+	return nil
+}
+
+// parseLCVoteArgs parses listening club vote command arguments
+func (p *Parser) parseLCVoteArgs(command *types.Command, args []string) error {
+	if len(args) == 0 {
+		return errors.NewValidationError("listening club vote requires a rating: !lc vote <1-10> [comment]")
+	}
+
+	// Parse rating
+	rating, err := strconv.Atoi(args[0])
+	if err != nil {
+		return errors.NewValidationError("invalid rating: must be a number between 1-10")
+	}
+
+	if rating < 1 || rating > 10 {
+		return errors.NewValidationError("rating must be between 1 and 10")
+	}
+
+	command.Rating = rating
+
+	// Optional comment
+	if len(args) > 1 {
+		command.Comment = strings.Join(args[1:], " ")
+	}
+
+	return nil
 }

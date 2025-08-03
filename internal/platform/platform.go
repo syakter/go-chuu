@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/syakter/go-chuu/internal/config"
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/lastfm"
+	"github.com/syakter/go-chuu/internal/listeningclub"
 	"github.com/syakter/go-chuu/internal/types"
 )
 
@@ -40,7 +42,12 @@ type MessageContext struct {
 	Platform  PlatformType
 }
 
-// ResponseSender handles sending responses back to the platform
+// UserContext contains information about the user executing a command
+type UserContext struct {
+	UserID   string
+	Username string
+	Platform PlatformType
+} // ResponseSender handles sending responses back to the platform
 type ResponseSender interface {
 	// SendTextResponse sends a text message
 	SendTextResponse(ctx context.Context, channelID string, content string) error
@@ -52,12 +59,13 @@ type ResponseSender interface {
 
 // BaseHandler provides common functionality for all platform handlers
 type BaseHandler struct {
-	lastfmClient *lastfm.Client
-	chartGen     *charts.Generator
-	Parser       *commands.Parser
-	config       *config.Config
-	logger       *slog.Logger
-	startTime    time.Time
+	lastfmClient  *lastfm.Client
+	chartGen      *charts.Generator
+	Parser        *commands.Parser
+	ListeningClub *listeningclub.Service
+	config        *config.Config
+	logger        *slog.Logger
+	startTime     time.Time
 }
 
 // NewBaseHandler creates a new base handler with shared dependencies
@@ -68,19 +76,27 @@ func NewBaseHandler(
 	parser *commands.Parser,
 	logger *slog.Logger,
 ) *BaseHandler {
+	// Create listening club service with file storage
+	dataDir := filepath.Join("/tmp", "go-chuu-data")
+	lcStorage := listeningclub.NewFileStorage(dataDir)
+	lcService := listeningclub.NewService(lcStorage, logger)
+
 	return &BaseHandler{
-		lastfmClient: lastfmClient,
-		chartGen:     chartGen,
-		Parser:       parser,
-		config:       cfg,
-		logger:       logger,
-		startTime:    time.Now(),
+		lastfmClient:  lastfmClient,
+		chartGen:      chartGen,
+		Parser:        parser,
+		ListeningClub: lcService,
+		config:        cfg,
+		logger:        logger,
+		startTime:     time.Now(),
 	}
 }
 
 // ProcessCommand processes a parsed command and returns a response
 // This is shared logic that can be used by all platform handlers
 func (b *BaseHandler) ProcessCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	// TODO: Add userCtx parameter when we update the callers
+	// For now, we'll handle user context inside each platform handler
 	b.logger.Debug("Processing command", "type", cmd.Type, "user", cmd.User)
 
 	switch cmd.Type {
@@ -138,6 +154,22 @@ func (b *BaseHandler) ProcessCommand(ctx context.Context, cmd *types.Command) *t
 
 	case types.CommandDiscoveryTrack:
 		return b.handleDiscoveryTrackCommand(ctx, cmd)
+
+	// Listening Club commands
+	case types.CommandLCSet:
+		return b.handleLCSetCommand(ctx, cmd)
+
+	case types.CommandLCVote:
+		return b.handleLCVoteCommand(ctx, cmd)
+
+	case types.CommandLCCurrent:
+		return b.handleLCCurrentCommand(ctx, cmd)
+
+	case types.CommandLCResults:
+		return b.handleLCResultsCommand(ctx, cmd)
+
+	case types.CommandLCClear:
+		return b.handleLCClearCommand(ctx, cmd)
 
 	default:
 		return &types.BotResponse{
@@ -472,5 +504,188 @@ func (b *BaseHandler) formatPeriodText(period string) string {
 		return " for the past year"
 	default:
 		return fmt.Sprintf(" for period: %s", period)
+	}
+}
+
+// Listening Club command handlers
+
+// handleLCSetCommand handles setting the listening club album
+func (b *BaseHandler) handleLCSetCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	if cmd.Artist == "" || cmd.Album == "" {
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Both artist and album are required. Use: !lc set Artist - Album",
+		}
+	}
+
+	// For now, allow any user to set the album. In production, you might want to restrict this.
+	if err := b.ListeningClub.SetAlbum(cmd.Artist, cmd.Album, "unknown user"); err != nil {
+		b.logger.Error("Failed to set listening club album", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to set listening club album: " + err.Error(),
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: fmt.Sprintf("📚 This week's listening club album has been set to:\n**%s - %s**\n\nVote with: !lc vote <1-10> [optional comment]", cmd.Artist, cmd.Album),
+	}
+}
+
+// handleLCVoteCommand handles voting on the listening club album
+func (b *BaseHandler) handleLCVoteCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	if cmd.Rating < 1 || cmd.Rating > 10 {
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Rating must be between 1 and 10",
+		}
+	}
+
+	// We need user context for voting, but we don't have it in this abstraction
+	// Platform handlers will need to override this method or pass user context
+	// For now, use placeholder values
+	if err := b.ListeningClub.Vote("platform", "user123", "User", cmd.Rating, cmd.Comment); err != nil {
+		b.logger.Error("Failed to record vote", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to record vote: " + err.Error(),
+		}
+	}
+
+	response := fmt.Sprintf("✅ Your vote of %d/10 has been recorded!", cmd.Rating)
+	if cmd.Comment != "" {
+		response += fmt.Sprintf("\nComment: %s", cmd.Comment)
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: response,
+	}
+}
+
+// handleLCCurrentCommand shows the current listening club album
+func (b *BaseHandler) handleLCCurrentCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	album, err := b.ListeningClub.GetCurrentAlbum()
+	if err != nil {
+		b.logger.Error("Failed to get current album", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to get current album: " + err.Error(),
+		}
+	}
+
+	if album == nil {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: "📚 No listening club album is currently set.\n\nSet one with: !lc set Artist - Album",
+		}
+	}
+
+	// Calculate remaining time
+	remainingTime := ""
+	if time.Now().Before(album.WeekEnd) {
+		remaining := time.Until(album.WeekEnd)
+		days := int(remaining.Hours() / 24)
+		hours := int(remaining.Hours()) % 24
+		if days > 0 {
+			remainingTime = fmt.Sprintf(" (%d days, %d hours remaining)", days, hours)
+		} else {
+			remainingTime = fmt.Sprintf(" (%d hours remaining)", hours)
+		}
+	} else {
+		remainingTime = " (voting period ended)"
+	}
+
+	content := fmt.Sprintf("📚 **Current Listening Club Album:**\n**%s - %s**\n\nSet by: %s%s\n\nVote with: !lc vote <1-10> [comment]",
+		album.Artist, album.Album, album.SetBy, remainingTime)
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content,
+	}
+}
+
+// handleLCResultsCommand shows voting results for the current album
+func (b *BaseHandler) handleLCResultsCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	album, err := b.ListeningClub.GetCurrentAlbum()
+	if err != nil {
+		b.logger.Error("Failed to get current album", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to get current album: " + err.Error(),
+		}
+	}
+
+	if album == nil {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: "📚 No listening club album is currently set.",
+		}
+	}
+
+	stats, err := b.ListeningClub.GetVoteStats()
+	if err != nil {
+		b.logger.Error("Failed to get vote stats", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to get voting results: " + err.Error(),
+		}
+	}
+
+	if stats.TotalVotes == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("📚 **%s - %s**\n\nNo votes yet! Be the first to vote with: !lc vote <1-10>", album.Artist, album.Album),
+		}
+	}
+
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("📚 **Voting Results: %s - %s**\n\n", album.Artist, album.Album))
+	content.WriteString(fmt.Sprintf("📋 **%d votes** | **Average: %.1f/10**\n\n", stats.TotalVotes, stats.AverageRating))
+
+	// Rating distribution
+	content.WriteString("**Rating Distribution:**\n")
+	for rating := 10; rating >= 1; rating-- {
+		count := stats.RatingCounts[rating]
+		if count > 0 {
+			bars := strings.Repeat("█", count)
+			content.WriteString(fmt.Sprintf("%2d: %s (%d)\n", rating, bars, count))
+		}
+	}
+
+	// Show individual votes with comments
+	votes, err := b.ListeningClub.GetAllVotes()
+	if err == nil && len(votes) > 0 {
+		content.WriteString("\n**Individual Votes:**\n")
+		for _, vote := range votes {
+			if vote.Comment != "" {
+				content.WriteString(fmt.Sprintf("%s: %d/10 - \"%s\"\n", vote.Username, vote.Rating, vote.Comment))
+			} else {
+				content.WriteString(fmt.Sprintf("%s: %d/10\n", vote.Username, vote.Rating))
+			}
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// handleLCClearCommand clears the current listening club week
+func (b *BaseHandler) handleLCClearCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	// For now, allow any user to clear. In production, you might want to restrict this to admins.
+	if err := b.ListeningClub.ClearWeek(); err != nil {
+		b.logger.Error("Failed to clear listening club week", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to clear listening club week: " + err.Error(),
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: "🔄 Listening club week has been cleared. Set a new album with: !lc set Artist - Album",
 	}
 }

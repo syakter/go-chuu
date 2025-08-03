@@ -53,19 +53,28 @@ const (
 	CommandTopTracksAll   CommandType = "kgt"
 	CommandDisco          CommandType = "disco"
 	CommandDiscoveryTrack CommandType = "dt"
-	CommandUnknown        CommandType = "unknown"
+	// Listening Club commands
+	CommandLCSet     CommandType = "lc_set"
+	CommandLCVote    CommandType = "lc_vote"
+	CommandLCCurrent CommandType = "lc_current"
+	CommandLCResults CommandType = "lc_results"
+	CommandLCClear   CommandType = "lc_clear"
+	CommandUnknown   CommandType = "unknown"
 )
 
 // Command represents a parsed user command
 type Command struct {
-	Type     CommandType `json:"type"`
-	User     string      `json:"user,omitempty"`
-	Period   string      `json:"period,omitempty"`
-	Artist   string      `json:"artist,omitempty"`
-	Album    string      `json:"album,omitempty"`
-	Track    string      `json:"track,omitempty"`
-	Limit    int         `json:"limit,omitempty"`
-	RawInput string      `json:"raw_input"`
+	Type   CommandType `json:"type"`
+	User   string      `json:"user,omitempty"`
+	Period string      `json:"period,omitempty"`
+	Artist string      `json:"artist,omitempty"`
+	Album  string      `json:"album,omitempty"`
+	Track  string      `json:"track,omitempty"`
+	Limit  int         `json:"limit,omitempty"`
+	// Listening Club specific fields
+	Rating   int    `json:"rating,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+	RawInput string `json:"raw_input"`
 }
 
 // Response types
