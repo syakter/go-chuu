@@ -362,14 +362,8 @@ func (g *Generator) downloadAlbumArt(ctx context.Context, imageURL string) (imag
 
 // drawTextOverlay draws album and artist text over the album cover
 func (g *Generator) drawTextOverlay(dc *gg.Context, album types.Album, x, y, width, height float64) {
-	// Set up text styling
-	if err := dc.LoadFontFace("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16); err != nil {
-		// Fallback: try to load a system font or use default
-		if err2 := dc.LoadFontFace("/System/Library/Fonts/Arial.ttf", 16); err2 != nil {
-			// If no system fonts available, continue with default (will use basic rendering)
-			g.logger.Debug("No system fonts available, using default text rendering")
-		}
-	}
+	// Set up text styling - load font with proper error handling
+	g.loadFont(dc)
 
 	// Prepare text content
 	artistText := g.truncateText(album.Artist, 25)
@@ -419,6 +413,28 @@ func (g *Generator) truncateText(text string, maxLength int) string {
 	}
 
 	return result + "..."
+}
+
+// loadFont attempts to load a suitable font for text rendering
+func (g *Generator) loadFont(dc *gg.Context) {
+	// Try loading fonts in order of preference
+	fontPaths := []string{
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+		"/System/Library/Fonts/Arial.ttf",
+		"/System/Library/Fonts/Helvetica.ttc",
+	}
+
+	for _, fontPath := range fontPaths {
+		if err := dc.LoadFontFace(fontPath, 16); err == nil {
+			// Font loaded successfully, no need to log in normal operation
+			return
+		}
+	}
+
+	// Only log a warning if no fonts could be loaded at all
+	g.logger.Warn("No system fonts available, using built-in default font")
 }
 
 // formatPeriodForAPI formats period for the Last.fm API
