@@ -229,25 +229,17 @@ func main() {
 
 func callWebServerAPI(username, period string) ([]byte, error) {
 	url := fmt.Sprintf("http://topster.gg/api/topalbums/%s/%s", username, period)
-	logger.Debug("Calling web server API", "url", url)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call API: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, resp.Status)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, err
 	}
 
-	logger.Debug("API response received", "size", len(body))
 	return body, nil
 }
 
@@ -263,46 +255,25 @@ func callWebServerAPI(username, period string) ([]byte, error) {
 // 		cols   = 3
 // 	)
 
-	dc := gg.NewContext(width, height)
-	// Set background color to white
-	dc.SetRGB(1, 1, 1)
-	dc.Clear()
+// 	dc := gg.NewContext(width, height)
+// 	albumWidth := width / cols
+// 	albumHeight := height / rows
 
-	albumWidth := width / cols
-	albumHeight := height / rows
+// 	for i, album := range albums[:9] { // Limit to 9 albums
+// 		x := float64(i%cols) * (float64(width) / float64(cols))
+// 		y := float64(i/cols) * (float64(height) / float64(rows))
 
-	// Ensure we don't go beyond available albums
-	maxAlbums := len(albums)
-	if maxAlbums > 9 {
-		maxAlbums = 9
-	}
+// 		// Download album art
+// 		resp, err := http.Get(album.Image)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		defer resp.Body.Close()
 
-	for i := 0; i < maxAlbums; i++ {
-		album := albums[i]
-		x := float64(i%cols) * (float64(width) / float64(cols))
-		y := float64(i/cols) * (float64(height) / float64(rows))
-
-		// Skip empty image URLs
-		if album.Image == "" {
-			logger.Warn("Empty image URL for album", "album", album.Name, "artist", album.Artist)
-			continue
-		}
-
-		// Download album art with timeout
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Get(album.Image)
-		if err != nil {
-			logger.Error("Failed to download album art", "error", err, "url", album.Image)
-			continue
-		}
-
-		img, _, err := image.Decode(resp.Body)
-		resp.Body.Close() // Close immediately after decode
-
-		if err != nil {
-			logger.Error("Failed to decode album art", "error", err, "url", album.Image)
-			continue
-		}
+// 		img, _, err := image.Decode(resp.Body)
+// 		if err != nil {
+// 			return nil, err
+// 		}
 
 // 		resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
 // 		// Draw album art
@@ -572,7 +543,11 @@ func GetTopAlbumsAll(period string, network *lastfm.Api) string {
 				logger.Error("strconv error", "error", err)
 			}
 			albm := album{alb.Name, alb.Artist.Name}
-			m[albm] += count
+			if _, ok := m[albm]; ok {
+				m[albm] += count
+			} else {
+				m[albm] = count
+			}
 		}
 	}
 	keys := make([]album, 0, len(m))
@@ -632,7 +607,11 @@ func GetTopTracksAll(period string, network *lastfm.Api) string {
 				logger.Error("strconv error", "error", err)
 			}
 			tr := Track{track.Name, track.Artist.Name}
-			m[tr] += count
+			if _, ok := m[tr]; ok {
+				m[tr] += count
+			} else {
+				m[tr] = count
+			}
 		}
 	}
 	keys := make([]Track, 0, len(m))
