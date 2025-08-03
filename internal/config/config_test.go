@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func TestLoad(t *testing.T) {
@@ -148,5 +150,99 @@ func TestGetLogLevel(t *testing.T) {
 				t.Errorf("Expected %s, got %s", test.expected, level.String())
 			}
 		})
+	}
+}
+
+func TestLoadWithDotEnv(t *testing.T) {
+	// Save original environment
+	originalSlackBot := os.Getenv("SLACK_BOT_TOKEN")
+	originalSlackApp := os.Getenv("SLACK_APP_TOKEN")
+	originalLastFMKey := os.Getenv("LASTFM_API_KEY")
+	originalLastFMSecret := os.Getenv("LASTFM_API_SECRET")
+
+	// Clear environment variables
+	os.Unsetenv("SLACK_BOT_TOKEN")
+	os.Unsetenv("SLACK_APP_TOKEN")
+	os.Unsetenv("LASTFM_API_KEY")
+	os.Unsetenv("LASTFM_API_SECRET")
+
+	// Restore environment at the end
+	defer func() {
+		if originalSlackBot != "" {
+			os.Setenv("SLACK_BOT_TOKEN", originalSlackBot)
+		}
+		if originalSlackApp != "" {
+			os.Setenv("SLACK_APP_TOKEN", originalSlackApp)
+		}
+		if originalLastFMKey != "" {
+			os.Setenv("LASTFM_API_KEY", originalLastFMKey)
+		}
+		if originalLastFMSecret != "" {
+			os.Setenv("LASTFM_API_SECRET", originalLastFMSecret)
+		}
+	}()
+
+	// Create a test .env content
+	testEnv := map[string]string{
+		"SLACK_BOT_TOKEN":   "xoxb-test-token",
+		"SLACK_APP_TOKEN":   "xapp-test-token",
+		"LASTFM_API_KEY":    "test-api-key",
+		"LASTFM_API_SECRET": "test-api-secret",
+	}
+
+	// Set environment variables manually (simulating .env loading)
+	for key, value := range testEnv {
+		os.Setenv(key, value)
+	}
+
+	// Test loading configuration
+	config, err := Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Verify tokens are loaded correctly
+	if config.SlackBotToken != "xoxb-test-token" {
+		t.Errorf("Expected SlackBotToken 'xoxb-test-token', got '%s'", config.SlackBotToken)
+	}
+
+	if config.SlackAppToken != "xapp-test-token" {
+		t.Errorf("Expected SlackAppToken 'xapp-test-token', got '%s'", config.SlackAppToken)
+	}
+
+	if config.LastFMAPIKey != "test-api-key" {
+		t.Errorf("Expected LastFMAPIKey 'test-api-key', got '%s'", config.LastFMAPIKey)
+	}
+
+	if config.LastFMAPISecret != "test-api-secret" {
+		t.Errorf("Expected LastFMAPISecret 'test-api-secret', got '%s'", config.LastFMAPISecret)
+	}
+}
+
+func TestGodotenvIntegration(t *testing.T) {
+	// Test that godotenv can load from a string (simulating .env file)
+	envContent := `SLACK_BOT_TOKEN=xoxb-from-dotenv
+SLACK_APP_TOKEN=xapp-from-dotenv
+LASTFM_API_KEY=key-from-dotenv
+LASTFM_API_SECRET=secret-from-dotenv`
+
+	// Parse the content
+	envMap, err := godotenv.Unmarshal(envContent)
+	if err != nil {
+		t.Fatalf("Failed to parse env content: %v", err)
+	}
+
+	// Verify parsing worked
+	expected := map[string]string{
+		"SLACK_BOT_TOKEN":   "xoxb-from-dotenv",
+		"SLACK_APP_TOKEN":   "xapp-from-dotenv",
+		"LASTFM_API_KEY":    "key-from-dotenv",
+		"LASTFM_API_SECRET": "secret-from-dotenv",
+	}
+
+	for key, expectedValue := range expected {
+		if envMap[key] != expectedValue {
+			t.Errorf("Expected %s='%s', got '%s'", key, expectedValue, envMap[key])
+		}
 	}
 }
