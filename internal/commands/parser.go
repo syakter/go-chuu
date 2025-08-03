@@ -156,21 +156,15 @@ func (p *Parser) parseCommand(command *types.Command, message string) error {
 // parseQuery handles non-command queries (artist/album by artist)
 func (p *Parser) parseQuery(command *types.Command, message string) error {
 	if strings.Contains(message, " by ") || strings.Contains(message, " By ") {
-		// Album or track by artist
-		var parts []string
-		if strings.Contains(message, " by ") {
-			parts = strings.Split(message, " by ")
-		} else {
-			parts = strings.Split(message, " By ")
-		}
-
-		if len(parts) != 2 {
+		// Album or track by artist - find the last occurrence of " by "
+		album, artist, found := p.splitOnLastBy(message)
+		if !found {
 			return errors.NewValidationError("invalid format: use 'album by artist' or 'track by artist'")
 		}
 
 		command.Type = types.CommandAlbumFans
-		command.Album = strings.TrimSpace(parts[0])
-		command.Artist = strings.TrimSpace(parts[1])
+		command.Album = album
+		command.Artist = artist
 	} else {
 		// Just artist name
 		command.Type = types.CommandArtistFans
@@ -186,19 +180,14 @@ func (p *Parser) parseTrackQuery(command *types.Command, query string) error {
 		return errors.NewValidationError("track format should be: !t track by artist")
 	}
 
-	var parts []string
-	if strings.Contains(query, " by ") {
-		parts = strings.Split(query, " by ")
-	} else {
-		parts = strings.Split(query, " By ")
-	}
-
-	if len(parts) != 2 {
+	// Find the last occurrence of " by "
+	track, artist, found := p.splitOnLastBy(query)
+	if !found {
 		return errors.NewValidationError("invalid track format: use 'track by artist'")
 	}
 
-	command.Track = strings.TrimSpace(parts[0])
-	command.Artist = strings.TrimSpace(parts[1])
+	command.Track = track
+	command.Artist = artist
 
 	return nil
 }
@@ -356,4 +345,28 @@ func GetHelpText() string {
 
 ` +
 		`Periods: 7d, 1m, 3m, 6m, 1y, overall`
+}
+
+// splitOnLastBy splits a string on the last occurrence of " by " (case insensitive)
+// Returns the parts before and after the last " by ", and whether a split was found
+func (p *Parser) splitOnLastBy(message string) (before, after string, found bool) {
+	// Find the last occurrence of either " by " or " By "
+	lastByIndex := strings.LastIndex(message, " by ")
+	lastCapByIndex := strings.LastIndex(message, " By ")
+
+	// Choose the later occurrence
+	lastIndex := -1
+	if lastByIndex > lastCapByIndex {
+		lastIndex = lastByIndex
+	} else if lastCapByIndex != -1 {
+		lastIndex = lastCapByIndex
+	}
+
+	if lastIndex == -1 {
+		return "", "", false
+	}
+
+	before = strings.TrimSpace(message[:lastIndex])
+	after = strings.TrimSpace(message[lastIndex+4:]) // +4 for " by " or " By "
+	return before, after, before != "" && after != ""
 }

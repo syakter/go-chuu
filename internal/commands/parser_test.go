@@ -78,6 +78,50 @@ func TestParser_Parse(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:  "album with 'by' in name",
+			input: "Songs by Tony Sly by No Use for a Name",
+			expected: &types.Command{
+				Type:     types.CommandAlbumFans,
+				Album:    "Songs by Tony Sly",
+				Artist:   "No Use for a Name",
+				RawInput: "Songs by Tony Sly by No Use for a Name",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "album with multiple 'by' words",
+			input: "Made by Walking by Kings of Leon",
+			expected: &types.Command{
+				Type:     types.CommandAlbumFans,
+				Album:    "Made by Walking",
+				Artist:   "Kings of Leon",
+				RawInput: "Made by Walking by Kings of Leon",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "album with capitalized By",
+			input: "Led by the Heart By Nikka Costa",
+			expected: &types.Command{
+				Type:     types.CommandAlbumFans,
+				Album:    "Led by the Heart",
+				Artist:   "Nikka Costa",
+				RawInput: "Led by the Heart By Nikka Costa",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "album with three 'by' occurrences",
+			input: "by by by by Artist Name",
+			expected: &types.Command{
+				Type:     types.CommandAlbumFans,
+				Album:    "by by by",
+				Artist:   "Artist Name",
+				RawInput: "by by by by Artist Name",
+			},
+			wantErr: false,
+		},
+		{
 			name:  "track fans command",
 			input: "!t Paranoid Android by Radiohead",
 			expected: &types.Command{
@@ -85,6 +129,17 @@ func TestParser_Parse(t *testing.T) {
 				Track:    "Paranoid Android",
 				Artist:   "Radiohead",
 				RawInput: "!t Paranoid Android by Radiohead",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "track with 'by' in name",
+			input: "!t Led by the Heart by Nikka Costa",
+			expected: &types.Command{
+				Type:     types.CommandTrackFans,
+				Track:    "Led by the Heart",
+				Artist:   "Nikka Costa",
+				RawInput: "!t Led by the Heart by Nikka Costa",
 			},
 			wantErr: false,
 		},
@@ -221,6 +276,86 @@ func TestIsValidPeriod(t *testing.T) {
 		t.Run("invalid_"+period, func(t *testing.T) {
 			if parser.isValidPeriod(period) {
 				t.Errorf("Expected %s to be invalid", period)
+			}
+		})
+	}
+}
+
+func TestParser_splitOnLastBy(t *testing.T) {
+	parser := NewParser([]string{"user1"})
+
+	tests := []struct {
+		name           string
+		input          string
+		expectedBefore string
+		expectedAfter  string
+		expectedFound  bool
+	}{
+		{
+			name:           "simple case",
+			input:          "OK Computer by Radiohead",
+			expectedBefore: "OK Computer",
+			expectedAfter:  "Radiohead",
+			expectedFound:  true,
+		},
+		{
+			name:           "multiple by occurrences",
+			input:          "Songs by Tony Sly by No Use for a Name",
+			expectedBefore: "Songs by Tony Sly",
+			expectedAfter:  "No Use for a Name",
+			expectedFound:  true,
+		},
+		{
+			name:           "capitalized By",
+			input:          "Led by the Heart By Nikka Costa",
+			expectedBefore: "Led by the Heart",
+			expectedAfter:  "Nikka Costa",
+			expectedFound:  true,
+		},
+		{
+			name:           "three by occurrences",
+			input:          "by by by by Artist Name",
+			expectedBefore: "by by by",
+			expectedAfter:  "Artist Name",
+			expectedFound:  true,
+		},
+		{
+			name:           "no by separator",
+			input:          "Just Artist Name",
+			expectedBefore: "",
+			expectedAfter:  "",
+			expectedFound:  false,
+		},
+		{
+			name:           "empty after by",
+			input:          "Album Name by ",
+			expectedBefore: "Album Name",
+			expectedAfter:  "",
+			expectedFound:  false,
+		},
+		{
+			name:           "empty before by",
+			input:          " by Artist Name",
+			expectedBefore: "",
+			expectedAfter:  "Artist Name",
+			expectedFound:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before, after, found := parser.splitOnLastBy(tt.input)
+
+			if found != tt.expectedFound {
+				t.Errorf("Expected found %v, got %v", tt.expectedFound, found)
+			}
+
+			if before != tt.expectedBefore {
+				t.Errorf("Expected before %q, got %q", tt.expectedBefore, before)
+			}
+
+			if after != tt.expectedAfter {
+				t.Errorf("Expected after %q, got %q", tt.expectedAfter, after)
 			}
 		})
 	}
