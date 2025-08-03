@@ -375,23 +375,24 @@ func (g *Generator) drawTextOverlay(dc *gg.Context, album types.Album, x, y, wid
 	artistText := g.truncateText(album.Artist, 25)
 	albumText := g.truncateText(album.Name, 25)
 
-	// Calculate text position (bottom of the album square)
-	textX := x + width/2     // Center horizontally
-	textY := y + height - 10 // Near bottom
+	// Calculate text position (top left corner of the album square)
+	textX := x + 8  // Small padding from left edge
+	textY := y + 15 // Small padding from top edge
 
 	// Draw semi-transparent background for text readability
 	textBgHeight := 50.0
-	dc.SetRGBA(0, 0, 0, 0.7) // Semi-transparent black
-	dc.DrawRectangle(x, y+height-textBgHeight, width, textBgHeight)
+	textBgWidth := width * 0.8 // Cover most of the width for readability
+	dc.SetRGBA(0, 0, 0, 0.7)   // Semi-transparent black
+	dc.DrawRectangle(x, y, textBgWidth, textBgHeight)
 	dc.Fill()
 
 	// Draw artist name (upper line)
-	dc.SetRGB(1, 1, 1) // White text
-	dc.DrawStringAnchored(artistText, textX, textY-20, 0.5, 0.5)
+	dc.SetRGB(1, 1, 1)                                    // White text
+	dc.DrawStringAnchored(artistText, textX, textY, 0, 0) // Left-aligned
 
 	// Draw album name (lower line)
-	dc.SetRGB(0.9, 0.9, 0.9) // Slightly dimmer white
-	dc.DrawStringAnchored(albumText, textX, textY-5, 0.5, 0.5)
+	dc.SetRGB(0.9, 0.9, 0.9)                                // Slightly dimmer white
+	dc.DrawStringAnchored(albumText, textX, textY+20, 0, 0) // Left-aligned, 20px below artist
 }
 
 // truncateText truncates text to fit within specified length
