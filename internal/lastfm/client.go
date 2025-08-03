@@ -380,6 +380,133 @@ func (c *Client) GetUserTopTracks(ctx context.Context, username, period string, 
 	return []string(result), nil
 }
 
+// GetUserTopAlbums gets top albums for a user
+func (c *Client) GetUserTopAlbums(ctx context.Context, username, period string, limit int) ([]string, error) {
+	c.logger.Debug("Getting user top albums", "user", username, "period", period, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "user_top_albums",
+		User:   username,
+		Period: period,
+		Limit:  limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+		albums, err := c.fetchUserTopAlbums(ctx, username, period, limit)
+		return types.StringSlice(albums), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get top albums for %s", username), err)
+	}
+
+	return []string(result), nil
+}
+
+// fetchUserTopAlbums fetches user top albums from the API
+func (c *Client) fetchUserTopAlbums(ctx context.Context, username, period string, limit int) ([]string, error) {
+	period = c.normalizePeriod(period)
+
+	result, err := c.api.User.GetTopAlbums(lastfm.P{"user": username, "period": period, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var albums []string
+	for i, album := range result.Albums {
+		if i >= limit {
+			break
+		}
+		albums = append(albums, fmt.Sprintf("%s - %s", album.Artist.Name, album.Name))
+	}
+
+	return albums, nil
+}
+
+// GetUserTopArtists gets top artists for a user
+func (c *Client) GetUserTopArtists(ctx context.Context, username, period string, limit int) ([]string, error) {
+	c.logger.Debug("Getting user top artists", "user", username, "period", period, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "user_top_artists",
+		User:   username,
+		Period: period,
+		Limit:  limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+		artists, err := c.fetchUserTopArtists(ctx, username, period, limit)
+		return types.StringSlice(artists), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get top artists for %s", username), err)
+	}
+
+	return []string(result), nil
+}
+
+// fetchUserTopArtists fetches user top artists from the API
+func (c *Client) fetchUserTopArtists(ctx context.Context, username, period string, limit int) ([]string, error) {
+	period = c.normalizePeriod(period)
+
+	result, err := c.api.User.GetTopArtists(lastfm.P{"user": username, "period": period, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var artists []string
+	for i, artist := range result.Artists {
+		if i >= limit {
+			break
+		}
+		artists = append(artists, artist.Name)
+	}
+
+	return artists, nil
+}
+
+// GetUserRecentTracks gets recent tracks for a user
+func (c *Client) GetUserRecentTracks(ctx context.Context, username string, limit int) ([]string, error) {
+	c.logger.Debug("Getting user recent tracks", "user", username, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:  "user_recent_tracks",
+		User:  username,
+		Limit: limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, time.Minute*2, func() (types.StringSlice, error) {
+		tracks, err := c.fetchUserRecentTracks(ctx, username, limit)
+		return types.StringSlice(tracks), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get recent tracks for %s", username), err)
+	}
+
+	return []string(result), nil
+}
+
+// fetchUserRecentTracks fetches user recent tracks from the API
+func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, limit int) ([]string, error) {
+	result, err := c.api.User.GetRecentTracks(lastfm.P{"user": username, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var tracks []string
+	for i, track := range result.Tracks {
+		if i >= limit {
+			break
+		}
+		// Skip now playing tracks in recent tracks list
+		if track.NowPlaying == "true" {
+			continue
+		}
+		tracks = append(tracks, fmt.Sprintf("%s - %s", track.Artist.Name, track.Name))
+	}
+
+	return tracks, nil
+}
+
 // fetchUserTopTracks fetches user top tracks from the API
 func (c *Client) fetchUserTopTracks(ctx context.Context, username, period string, limit int) ([]string, error) {
 	period = c.normalizePeriod(period)

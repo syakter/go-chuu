@@ -166,6 +166,57 @@ func TestParser_Parse(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:  "top albums command",
+			input: "!top user1 7d",
+			expected: &types.Command{
+				Type:     types.CommandTopAlbums,
+				User:     "user1",
+				Period:   "7d",
+				RawInput: "!top user1 7d",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "top artists command",
+			input: "!ta user1 1m",
+			expected: &types.Command{
+				Type:     types.CommandTopArtists,
+				User:     "user1",
+				Period:   "1m",
+				RawInput: "!ta user1 1m",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "now playing command",
+			input: "!np",
+			expected: &types.Command{
+				Type:     types.CommandNowPlaying,
+				RawInput: "!np",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "uptime command",
+			input: "!uptime",
+			expected: &types.Command{
+				Type:     types.CommandUptime,
+				RawInput: "!uptime",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "disco command",
+			input: "!disco user1 Radiohead",
+			expected: &types.Command{
+				Type:     types.CommandDisco,
+				User:     "user1",
+				Artist:   "Radiohead",
+				RawInput: "!disco user1 Radiohead",
+			},
+			wantErr: false,
+		},
+		{
 			name:    "invalid user",
 			input:   "!track invaliduser 7d",
 			wantErr: true,

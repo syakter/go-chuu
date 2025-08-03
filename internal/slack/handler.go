@@ -192,6 +192,27 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 	case types.CommandTopTracks:
 		return h.handleTopTracksCommand(ctx, cmd)
 
+	case types.CommandTopAlbums:
+		return h.handleTopAlbumsCommand(ctx, cmd)
+
+	case types.CommandTopArtists:
+		return h.handleTopArtistsCommand(ctx, cmd)
+
+	case types.CommandRecentTracks:
+		return h.handleRecentTracksCommand(ctx, cmd)
+
+	case types.CommandTopAlbumsAll:
+		return h.handleTopAlbumsAllCommand(ctx, cmd)
+
+	case types.CommandTopTracksAll:
+		return h.handleTopTracksAllCommand(ctx, cmd)
+
+	case types.CommandDisco:
+		return h.handleDiscoCommand(ctx, cmd)
+
+	case types.CommandDiscoveryTrack:
+		return h.handleDiscoveryTrackCommand(ctx, cmd)
+
 	default:
 		return &types.BotResponse{
 			Type:  types.ResponseTypeError,
@@ -452,5 +473,115 @@ func (h *Handler) sendErrorResponse(channel string, err error) {
 	errorMessage := errors.GetUserFriendlyMessage(err)
 	if _, _, sendErr := h.api.PostMessage(channel, slack.MsgOptionText(errorMessage, false)); sendErr != nil {
 		h.logger.Error("Failed to send error message", "error", sendErr)
+	}
+}
+
+// handleTopAlbumsCommand processes top albums commands
+func (h *Handler) handleTopAlbumsCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	albums, err := h.lastfmClient.GetUserTopAlbums(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get user top albums", "error", err, "user", cmd.User, "period", cmd.Period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(cmd.Period)
+	content.WriteString(fmt.Sprintf("%s's top albums%s:\n\n", cmd.User, periodText))
+
+	for i, album := range albums {
+		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, album))
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// handleTopArtistsCommand processes top artists commands
+func (h *Handler) handleTopArtistsCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	artists, err := h.lastfmClient.GetUserTopArtists(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get user top artists", "error", err, "user", cmd.User, "period", cmd.Period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(cmd.Period)
+	content.WriteString(fmt.Sprintf("%s's top artists%s:\n\n", cmd.User, periodText))
+
+	for i, artist := range artists {
+		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, artist))
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// handleRecentTracksCommand processes recent tracks commands
+func (h *Handler) handleRecentTracksCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	tracks, err := h.lastfmClient.GetUserRecentTracks(ctx, cmd.User, cmd.Limit)
+	if err != nil {
+		h.logger.Error("Failed to get user recent tracks", "error", err, "user", cmd.User, "limit", cmd.Limit)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("%s's recent tracks:\n\n", cmd.User))
+
+	for i, track := range tracks {
+		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, track))
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// handleTopAlbumsAllCommand processes top albums for all users commands
+func (h *Handler) handleTopAlbumsAllCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	// This would require aggregating data across all users - placeholder for now
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: "Top albums for all users feature coming soon! 🎵",
+	}
+}
+
+// handleTopTracksAllCommand processes top tracks for all users commands
+func (h *Handler) handleTopTracksAllCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	// This would require aggregating data across all users - placeholder for now
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: "Top tracks for all users feature coming soon! 🎵",
+	}
+}
+
+// handleDiscoCommand processes disco commands
+func (h *Handler) handleDiscoCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	// This would show top albums by a specific artist for a user - placeholder for now
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: fmt.Sprintf("Discovery feature for %s by %s coming soon! 🎵", cmd.Artist, cmd.User),
+	}
+}
+
+// handleDiscoveryTrackCommand processes discovery track commands
+func (h *Handler) handleDiscoveryTrackCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	// This would show top tracks by a specific artist for a user - placeholder for now
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: fmt.Sprintf("Track discovery for %s by %s coming soon! 🎵", cmd.Artist, cmd.User),
 	}
 }
