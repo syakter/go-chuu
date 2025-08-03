@@ -1,6 +1,6 @@
 # go-chuu 🎵
 
-A sophisticated Slack bot that provides music statistics and social features for Last.fm users. Originally designed for the "Kagang" music community, go-chuu helps groups discover music trends, compare listening habits, and stay connected through shared musical experiences.
+A sophisticated multi-platform bot that provides music statistics and social features for Last.fm users on both Slack and Discord. Originally designed for the "Kagang" music community, go-chuu helps groups discover music trends, compare listening habits, and stay connected through shared musical experiences.
 
 ## Features ✨
 
@@ -25,8 +25,10 @@ A sophisticated Slack bot that provides music statistics and social features for
 
 ### Prerequisites
 - Go 1.22+
-- Slack Bot Token and App Token
 - Last.fm API credentials
+- Platform credentials:
+  - **For Slack**: Bot Token and App Token
+  - **For Discord**: Bot Token
 
 ### Installation
 
@@ -67,12 +69,13 @@ docker run --env-file .env --network=host go-chuu
 
 ### Required Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SLACK_BOT_TOKEN` | Slack Bot User OAuth Token | `xoxb-...` |
-| `SLACK_APP_TOKEN` | Slack App Token | `xapp-...` |
-| `LASTFM_API_KEY` | Last.fm API Key | `abc123...` |
-| `LASTFM_API_SECRET` | Last.fm API Secret | `def456...` |
+| Variable | Description | Example | Required When |
+|----------|-------------|---------|---------------|
+| `LASTFM_API_KEY` | Last.fm API Key | `abc123...` | Always |
+| `LASTFM_API_SECRET` | Last.fm API Secret | `def456...` | Always |
+| `SLACK_BOT_TOKEN` | Slack Bot User OAuth Token | `xoxb-...` | Slack enabled |
+| `SLACK_APP_TOKEN` | Slack App Token | `xapp-...` | Slack enabled |
+| `DISCORD_BOT_TOKEN` | Discord Bot Token | `MTEx...` | Discord enabled |
 
 ### Optional Configuration
 
@@ -85,7 +88,10 @@ docker run --env-file .env --network=host go-chuu
 | `CACHE_TTL` | `5m` | Cache time-to-live |
 | `REQUEST_TIMEOUT` | `30s` | API request timeout |
 | `SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown timeout |
+| `ENABLE_SLACK` | `true` | Enable Slack integration |
+| `ENABLE_DISCORD` | `false` | Enable Discord integration |
 | `SLACK_CHANNEL_ID` | `C0392543PUY` | Default Slack channel for uploads |
+| `DISCORD_GUILD_ID` | `` | Discord server ID (optional) |
 
 ## Commands Reference 📖
 
@@ -116,6 +122,91 @@ docker run --env-file .env --network=host go-chuu
 - `!dt username artist` - User's top tracks by specific artist
 
 **Time Periods**: `7d`, `1m`, `3m`, `6m`, `1y`, `overall`
+
+## Platform Setup 🔧
+
+### Slack Setup
+
+1. **Create a Slack App**
+   - Go to [api.slack.com/apps](https://api.slack.com/apps)
+   - Click "Create New App" → "From scratch"
+   - Choose app name and workspace
+
+2. **Configure Bot Permissions**
+   - Go to "OAuth & Permissions"
+   - Add these Bot Token Scopes:
+     - `app_mentions:read`
+     - `chat:write`
+     - `files:write`
+     - `channels:read`
+
+3. **Enable Socket Mode**
+   - Go to "Socket Mode" and enable it
+   - Create an App-Level Token with `connections:write` scope
+
+4. **Enable Events**
+   - Go to "Event Subscriptions" and enable events
+   - Subscribe to `app_mention` bot event
+
+5. **Install to Workspace**
+   - Go to "Install App" and install to your workspace
+   - Copy the Bot User OAuth Token and App Token
+
+### Discord Setup
+
+1. **Create a Discord Application**
+   - Go to [discord.com/developers/applications](https://discord.com/developers/applications)
+   - Click "New Application" and give it a name
+
+2. **Create a Bot**
+   - Go to the "Bot" section
+   - Click "Add Bot"
+   - Copy the bot token
+
+3. **Set Bot Permissions**
+   - Go to "OAuth2" → "URL Generator"
+   - Select "bot" scope
+   - Select these permissions:
+     - Send Messages
+     - Attach Files
+     - Read Message History
+     - Use Slash Commands (optional)
+
+4. **Invite Bot to Server**
+   - Use the generated URL to invite the bot to your Discord server
+   - Make sure the bot has appropriate channel permissions
+
+### Environment Configuration Examples
+
+**Slack Only:**
+```bash
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_API_SECRET=your_lastfm_secret
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-token
+ENABLE_SLACK=true
+ENABLE_DISCORD=false
+```
+
+**Discord Only:**
+```bash
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_API_SECRET=your_lastfm_secret
+DISCORD_BOT_TOKEN=your_discord_token
+ENABLE_SLACK=false
+ENABLE_DISCORD=true
+```
+
+**Both Platforms:**
+```bash
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_API_SECRET=your_lastfm_secret
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-token
+DISCORD_BOT_TOKEN=your_discord_token
+ENABLE_SLACK=true
+ENABLE_DISCORD=true
+```
 
 ## Architecture 🏗️
 
@@ -242,10 +333,18 @@ spec:
 
 ### Common Issues
 
-**Bot not responding to mentions**
+**Slack bot not responding to mentions**
 - Verify `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are correct
 - Check bot has necessary OAuth scopes (`app_mentions:read`, `chat:write`)
 - Ensure bot is invited to the channel
+- Make sure `ENABLE_SLACK=true`
+
+**Discord bot not responding**
+- Verify `DISCORD_BOT_TOKEN` is correct
+- Check bot has necessary permissions in the server
+- Ensure bot is online and has access to the channels
+- Make sure `ENABLE_DISCORD=true`
+- Try mentioning the bot or sending a DM
 
 **Last.fm API errors**
 - Verify API credentials are valid

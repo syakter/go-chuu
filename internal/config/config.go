@@ -16,6 +16,14 @@ type Config struct {
 	SlackAppToken  string `json:"-"`
 	SlackChannelID string `json:"slack_channel_id"`
 
+	// Discord configuration
+	DiscordBotToken string `json:"-"` // Hide from JSON serialization for security
+	DiscordGuildID  string `json:"discord_guild_id"`
+
+	// Platform configuration
+	EnableSlack   bool `json:"enable_slack"`
+	EnableDiscord bool `json:"enable_discord"`
+
 	// Last.fm configuration
 	LastFMAPIKey    string `json:"-"`
 	LastFMAPISecret string `json:"-"`
@@ -55,23 +63,52 @@ func Load() (*Config, error) {
 		CacheTTL:              getEnvDuration("CACHE_TTL", "5m"),
 		RequestTimeout:        getEnvDuration("REQUEST_TIMEOUT", "30s"),
 		SlackChannelID:        getEnv("SLACK_CHANNEL_ID", "C0392543PUY"),
+		DiscordGuildID:        getEnv("DISCORD_GUILD_ID", ""),
+		EnableSlack:           getEnvBool("ENABLE_SLACK", true),
+		EnableDiscord:         getEnvBool("ENABLE_DISCORD", false),
 	}
 
-	// Required environment variables
-	requiredVars := map[string]*string{
-		"SLACK_BOT_TOKEN":   &config.SlackBotToken,
-		"SLACK_APP_TOKEN":   &config.SlackAppToken,
+	// Always required environment variables
+	alwaysRequiredVars := map[string]*string{
 		"LASTFM_API_KEY":    &config.LastFMAPIKey,
 		"LASTFM_API_SECRET": &config.LastFMAPISecret,
 	}
 
-	// Check required variables
-	for envVar, configField := range requiredVars {
+	// Check always required variables
+	for envVar, configField := range alwaysRequiredVars {
 		value := os.Getenv(envVar)
 		if value == "" {
 			return nil, fmt.Errorf("required environment variable %s is not set", envVar)
 		}
 		*configField = value
+	}
+
+	// Platform-specific required variables
+	if config.EnableSlack {
+		slackVars := map[string]*string{
+			"SLACK_BOT_TOKEN": &config.SlackBotToken,
+			"SLACK_APP_TOKEN": &config.SlackAppToken,
+		}
+		for envVar, configField := range slackVars {
+			value := os.Getenv(envVar)
+			if value == "" {
+				return nil, fmt.Errorf("required environment variable %s is not set (Slack enabled)", envVar)
+			}
+			*configField = value
+		}
+	}
+
+	if config.EnableDiscord {
+		discordVars := map[string]*string{
+			"DISCORD_BOT_TOKEN": &config.DiscordBotToken,
+		}
+		for envVar, configField := range discordVars {
+			value := os.Getenv(envVar)
+			if value == "" {
+				return nil, fmt.Errorf("required environment variable %s is not set (Discord enabled)", envVar)
+			}
+			*configField = value
+		}
 	}
 
 	// Optional user list override
@@ -98,6 +135,11 @@ func (c *Config) Validate() error {
 
 	if c.CacheTTL <= 0 {
 		return fmt.Errorf("cache TTL must be positive")
+	}
+
+	// At least one platform must be enabled
+	if !c.EnableSlack && !c.EnableDiscord {
+		return fmt.Errorf("at least one platform (Slack or Discord) must be enabled")
 	}
 
 	// Validate log level

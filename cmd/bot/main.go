@@ -13,15 +13,13 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-<<<<<<< HEAD
-	"github.com/joho/godotenv"
-=======
->>>>>>> b343f58 (major refactor: modernize architecture and add comprehensive improvements)
 	"github.com/syakter/go-chuu/internal/cache"
 	"github.com/syakter/go-chuu/internal/charts"
 	"github.com/syakter/go-chuu/internal/commands"
 	"github.com/syakter/go-chuu/internal/config"
+	"github.com/syakter/go-chuu/internal/discord"
 	"github.com/syakter/go-chuu/internal/lastfm"
+	"github.com/syakter/go-chuu/internal/platform"
 	"github.com/syakter/go-chuu/internal/slack"
 )
 
@@ -80,25 +78,8 @@ func main() {
 }
 
 func run() error {
-<<<<<<< HEAD
-	// Load .env file if it exists (ignore error if file doesn't exist)
-	if err := godotenv.Load(); err != nil {
-		// Only log debug message, don't fail - environment variables might be set directly
-		if !os.IsNotExist(err) {
-			fmt.Printf("Warning: error loading .env file: %v\n", err)
-		}
-	}
-
-	// Try loading with embedded keys first, fallback to regular loading
-	cfg, err := config.LoadEmbedded()
-	if err != nil {
-		// If embedded loading fails, try regular loading for backwards compatibility
-		cfg, err = config.Load()
-	}
-=======
 	// Load configuration
 	cfg, err := config.Load()
->>>>>>> b343f58 (major refactor: modernize architecture and add comprehensive improvements)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -129,11 +110,7 @@ func run() error {
 
 	// Create charts generator
 	tempDir := filepath.Join(os.TempDir(), "go-chuu-charts")
-<<<<<<< HEAD
 	chartGen := charts.NewGenerator(logger, tempDir, lastfmClient.GetAPI())
-=======
-	chartGen := charts.NewGenerator(logger, tempDir)
->>>>>>> b343f58 (major refactor: modernize architecture and add comprehensive improvements)
 	if err := chartGen.EnsureTempDir(); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
@@ -141,8 +118,27 @@ func run() error {
 	// Create command parser
 	parser := commands.NewParser(cfg.Users)
 
-	// Create Slack handler
-	slackHandler := slack.NewHandler(cfg, lastfmClient, chartGen, parser, logger)
+	// Create platform handlers
+	var handlers []platform.Handler
+
+	if cfg.EnableSlack {
+		slackHandler := slack.NewHandler(cfg, lastfmClient, chartGen, parser, logger)
+		handlers = append(handlers, slackHandler)
+		logger.Info("Slack handler enabled")
+	}
+
+	if cfg.EnableDiscord {
+		discordHandler, err := discord.NewHandler(cfg, lastfmClient, chartGen, parser, logger)
+		if err != nil {
+			return fmt.Errorf("failed to create Discord handler: %w", err)
+		}
+		handlers = append(handlers, discordHandler)
+		logger.Info("Discord handler enabled")
+	}
+
+	if len(handlers) == 0 {
+		return fmt.Errorf("no platform handlers enabled")
+	}
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -158,18 +154,20 @@ func run() error {
 		cancel()
 	}()
 
-	// Start the bot
-	errorChan := make(chan error, 1)
-	go func() {
-		if err := slackHandler.Start(ctx); err != nil {
-			errorChan <- fmt.Errorf("slack handler error: %w", err)
-		}
-	}()
+	// Start the platform handlers
+	errorChan := make(chan error, len(handlers))
+	for _, handler := range handlers {
+		go func(h platform.Handler) {
+			if err := h.Start(ctx); err != nil {
+				errorChan <- fmt.Errorf("%s handler error: %w", h.GetPlatformType(), err)
+			}
+		}(handler)
+	}
 
 	// Wait for shutdown or error
 	select {
 	case err := <-errorChan:
-		logger.Error("Bot stopped with error", "error", err)
+		logger.Error("Handler stopped with error", "error", err)
 		return err
 	case <-ctx.Done():
 		logger.Info("Bot shutting down gracefully")

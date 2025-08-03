@@ -95,6 +95,7 @@ func TestValidate(t *testing.T) {
 			LogLevel:              "info",
 			MaxConcurrentRequests: 5,
 			CacheTTL:              5 * time.Minute,
+			EnableSlack:           true,
 		}
 
 		if err := cfg.Validate(); err != nil {
@@ -108,6 +109,7 @@ func TestValidate(t *testing.T) {
 			LogLevel:              "invalid",
 			MaxConcurrentRequests: 5,
 			CacheTTL:              5 * time.Minute,
+			EnableSlack:           true,
 		}
 
 		if err := cfg.Validate(); err == nil {
@@ -121,10 +123,26 @@ func TestValidate(t *testing.T) {
 			LogLevel:              "info",
 			MaxConcurrentRequests: 5,
 			CacheTTL:              5 * time.Minute,
+			EnableSlack:           true,
 		}
 
 		if err := cfg.Validate(); err == nil {
 			t.Error("Expected error for empty users, got nil")
+		}
+	})
+
+	t.Run("no platforms enabled", func(t *testing.T) {
+		cfg := &Config{
+			Users:                 []string{"user1"},
+			LogLevel:              "info",
+			MaxConcurrentRequests: 5,
+			CacheTTL:              5 * time.Minute,
+			EnableSlack:           false,
+			EnableDiscord:         false,
+		}
+
+		if err := cfg.Validate(); err == nil {
+			t.Error("Expected error when no platforms enabled, got nil")
 		}
 	})
 }
