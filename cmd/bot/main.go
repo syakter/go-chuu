@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/joho/godotenv"
 	"github.com/syakter/go-chuu/internal/cache"
 	"github.com/syakter/go-chuu/internal/charts"
 	"github.com/syakter/go-chuu/internal/commands"
@@ -78,6 +79,14 @@ func main() {
 }
 
 func run() error {
+	// Load .env file if it exists (ignore error if file doesn't exist)
+	if err := godotenv.Load(); err != nil {
+		// Only log debug message, don't fail - environment variables might be set directly
+		if !os.IsNotExist(err) {
+			fmt.Printf("Warning: error loading .env file: %v\n", err)
+		}
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
