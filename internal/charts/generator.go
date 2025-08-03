@@ -380,19 +380,17 @@ func (g *Generator) drawTextOverlay(dc *gg.Context, album types.Album, x, y, wid
 	textY := y + 15 // Small padding from top edge
 
 	// Draw semi-transparent background for text readability
-	textBgHeight := 50.0
-	textBgWidth := width * 0.8 // Cover most of the width for readability
-	dc.SetRGBA(0, 0, 0, 0.7)   // Semi-transparent black
+	textBgHeight := 40.0       // Reduced height
+	textBgWidth := width * 0.6 // Reduced width to be less intrusive
+	dc.SetRGBA(0, 0, 0, 0.6)   // Slightly more transparent
 	dc.DrawRectangle(x, y, textBgWidth, textBgHeight)
-	dc.Fill()
-
-	// Draw artist name (upper line)
+	dc.Fill()                                             // Draw artist name (upper line)
 	dc.SetRGB(1, 1, 1)                                    // White text
 	dc.DrawStringAnchored(artistText, textX, textY, 0, 0) // Left-aligned
 
 	// Draw album name (lower line)
 	dc.SetRGB(0.9, 0.9, 0.9)                                // Slightly dimmer white
-	dc.DrawStringAnchored(albumText, textX, textY+20, 0, 0) // Left-aligned, 20px below artist
+	dc.DrawStringAnchored(albumText, textX, textY+18, 0, 0) // Left-aligned, 18px below artist (tighter spacing)
 }
 
 // truncateText truncates text to fit within specified length
