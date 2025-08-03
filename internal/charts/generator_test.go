@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fogleman/gg"
 	"github.com/syakter/go-chuu/internal/types"
 	"github.com/syakter/go-lastfm/lastfm"
 )
@@ -238,4 +239,26 @@ func TestGenerator_CreateAlbumChartWithText(t *testing.T) {
 
 	// Clean up
 	os.RemoveAll(tempDir)
+}
+
+func TestGenerator_LoadFont(t *testing.T) {
+	// Test font loading functionality
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	tempDir := filepath.Join(os.TempDir(), "test-font-loading")
+	lastfmAPI := lastfm.New("test-key", "test-secret")
+
+	generator := NewGenerator(logger, tempDir, lastfmAPI)
+
+	// Create a drawing context to test font loading
+	dc := gg.NewContext(100, 100)
+
+	// This should not panic or cause issues
+	generator.loadFont(dc)
+
+	// Test that we can draw text after loading font
+	dc.SetRGB(1, 1, 1)
+	dc.DrawString("Test", 10, 20)
+
+	// If we get here without panicking, font loading worked
+	t.Log("Font loading completed successfully")
 }
