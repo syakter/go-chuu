@@ -85,8 +85,12 @@ func run() error {
 		}
 	}
 
-	// Load configuration
-	cfg, err := config.Load()
+	// Try loading with embedded keys first, fallback to regular loading
+	cfg, err := config.LoadEmbedded()
+	if err != nil {
+		// If embedded loading fails, try regular loading for backwards compatibility
+		cfg, err = config.Load()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
