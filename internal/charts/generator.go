@@ -2,13 +2,11 @@ package charts
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	"image/png"
 	_ "image/png"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +17,7 @@ import (
 	"github.com/fogleman/gg"
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/types"
+	"github.com/syakter/go-lastfm/lastfm"
 )
 
 // Generator handles chart generation
@@ -26,16 +25,18 @@ type Generator struct {
 	logger     *slog.Logger
 	tempDir    string
 	httpClient *http.Client
+	lastfmAPI  *lastfm.Api
 }
 
 // NewGenerator creates a new chart generator
-func NewGenerator(logger *slog.Logger, tempDir string) *Generator {
+func NewGenerator(logger *slog.Logger, tempDir string, lastfmAPI *lastfm.Api) *Generator {
 	return &Generator{
 		logger:  logger,
 		tempDir: tempDir,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		lastfmAPI: lastfmAPI,
 	}
 }
 
@@ -83,34 +84,52 @@ func (g *Generator) GenerateAlbumChart(ctx context.Context, username, period str
 	}, nil
 }
 
-// fetchAlbumData fetches album data from the external topster.gg API
+// fetchAlbumData fetches album data from the Last.fm API
 func (g *Generator) fetchAlbumData(ctx context.Context, username, period string) ([]types.Album, error) {
 	formattedPeriod := g.formatPeriodForAPI(period)
-	url := fmt.Sprintf("http://topster.gg/api/topalbums/%s/%s", username, formattedPeriod)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	result, err := g.lastfmAPI.User.GetTopAlbums(lastfm.P{
+		"user":   username,
+		"period": formattedPeriod,
+		"limit":  "9", // We only need 9 albums for 3x3 grid
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+		// Check for common Last.fm API errors
+		if lastfmErr, ok := err.(*lastfm.LastfmError); ok {
+			switch lastfmErr.Code {
+			case 6: // User not found
+				return nil, fmt.Errorf("Last.fm user '%s' not found", username)
+			case 26: // API key suspended
+				return nil, fmt.Errorf("Last.fm API key suspended or invalid")
+			case 29: // Rate limit exceeded
+				return nil, fmt.Errorf("Last.fm API rate limit exceeded, please try again later")
+			default:
+				return nil, fmt.Errorf("Last.fm API error: %s", lastfmErr.Message)
+			}
+		}
+		return nil, fmt.Errorf("failed to get top albums from Last.fm: %w", err)
 	}
 
 	var albums []types.Album
-	if err := json.Unmarshal(body, &albums); err != nil {
-		return nil, err
+	for _, album := range result.Albums {
+		// Find the largest image URL
+		imageURL := ""
+		for _, img := range album.Images {
+			if img.Size == "large" || img.Size == "extralarge" {
+				imageURL = img.Url
+				break
+			}
+		}
+		// Fallback to any available image
+		if imageURL == "" && len(album.Images) > 0 {
+			imageURL = album.Images[len(album.Images)-1].Url
+		}
+
+		albums = append(albums, types.Album{
+			Name:   album.Name,
+			Artist: album.Artist.Name,
+			Image:  imageURL,
+		})
 	}
 
 	return albums, nil
@@ -193,17 +212,19 @@ func (g *Generator) downloadAlbumArt(ctx context.Context, imageURL string) (imag
 	return img, nil
 }
 
-// formatPeriodForAPI formats period for the topster.gg API
+// formatPeriodForAPI formats period for the Last.fm API
 func (g *Generator) formatPeriodForAPI(period string) string {
 	switch period {
 	case "7d", "1w":
 		return "7day"
-	case "1d":
-		return "1day"
-	case "30d", "1m":
-		return "30day"
-	case "1y":
-		return "365day"
+	case "1m", "30d":
+		return "1month"
+	case "3m", "90d":
+		return "3month"
+	case "6m", "180d":
+		return "6month"
+	case "1y", "365d":
+		return "12month"
 	default:
 		return "overall"
 	}

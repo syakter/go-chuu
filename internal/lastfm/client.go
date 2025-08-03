@@ -43,6 +43,11 @@ func NewClient(cfg *config.Config, cache cache.Cache, logger *slog.Logger) *Clie
 	return c
 }
 
+// GetAPI returns the underlying Last.fm API client
+func (c *Client) GetAPI() *lastfm.Api {
+	return c.api
+}
+
 // GetArtistScrobbles gets scrobble counts for an artist across all users
 func (c *Client) GetArtistScrobbles(ctx context.Context, artistName string) ([]types.UserCount, error) {
 	c.logger.Debug("Getting artist scrobbles", "artist", artistName)

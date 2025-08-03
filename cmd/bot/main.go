@@ -121,7 +121,7 @@ func run() error {
 
 	// Create charts generator
 	tempDir := filepath.Join(os.TempDir(), "go-chuu-charts")
-	chartGen := charts.NewGenerator(logger, tempDir)
+	chartGen := charts.NewGenerator(logger, tempDir, lastfmClient.GetAPI())
 	if err := chartGen.EnsureTempDir(); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
