@@ -109,7 +109,7 @@ docker run --env-file .env --network=host go-chuu
 
 ### Personal Stats
 - `!top username [period]` - Top albums for user
-- `!track username [period]` - Top tracks for user  
+- `!track username [period]` - Top tracks for user
 - `!ta username [period]` - Top artists for user
 - `!rp username [limit]` - Recent tracks (max 20)
 - `!chart username [period]` - Generate visual album chart
@@ -147,6 +147,91 @@ docker run --env-file .env --network=host go-chuu
 !lc vote 9 One of the greatest albums ever made!
 !lc current
 !lc results
+```
+
+## Platform Setup 🔧
+
+### Slack Setup
+
+1. **Create a Slack App**
+   - Go to [api.slack.com/apps](https://api.slack.com/apps)
+   - Click "Create New App" → "From scratch"
+   - Choose app name and workspace
+
+2. **Configure Bot Permissions**
+   - Go to "OAuth & Permissions"
+   - Add these Bot Token Scopes:
+     - `app_mentions:read`
+     - `chat:write`
+     - `files:write`
+     - `channels:read`
+
+3. **Enable Socket Mode**
+   - Go to "Socket Mode" and enable it
+   - Create an App-Level Token with `connections:write` scope
+
+4. **Enable Events**
+   - Go to "Event Subscriptions" and enable events
+   - Subscribe to `app_mention` bot event
+
+5. **Install to Workspace**
+   - Go to "Install App" and install to your workspace
+   - Copy the Bot User OAuth Token and App Token
+
+### Discord Setup
+
+1. **Create a Discord Application**
+   - Go to [discord.com/developers/applications](https://discord.com/developers/applications)
+   - Click "New Application" and give it a name
+
+2. **Create a Bot**
+   - Go to the "Bot" section
+   - Click "Add Bot"
+   - Copy the bot token
+
+3. **Set Bot Permissions**
+   - Go to "OAuth2" → "URL Generator"
+   - Select "bot" scope
+   - Select these permissions:
+     - Send Messages
+     - Attach Files
+     - Read Message History
+     - Use Slash Commands (optional)
+
+4. **Invite Bot to Server**
+   - Use the generated URL to invite the bot to your Discord server
+   - Make sure the bot has appropriate channel permissions
+
+### Environment Configuration Examples
+
+**Slack Only:**
+```bash
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_API_SECRET=your_lastfm_secret
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-token
+ENABLE_SLACK=true
+ENABLE_DISCORD=false
+```
+
+**Discord Only:**
+```bash
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_API_SECRET=your_lastfm_secret
+DISCORD_BOT_TOKEN=your_discord_token
+ENABLE_SLACK=false
+ENABLE_DISCORD=true
+```
+
+**Both Platforms:**
+```bash
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_API_SECRET=your_lastfm_secret
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-token
+DISCORD_BOT_TOKEN=your_discord_token
+ENABLE_SLACK=true
+ENABLE_DISCORD=true
 ```
 
 ## Platform Setup 🔧
