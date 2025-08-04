@@ -220,8 +220,14 @@ func (h *Handler) SendErrorResponse(ctx context.Context, channelID string, err e
 
 // processCommand wraps the base ProcessCommand with Slack-specific user context
 func (h *Handler) processCommand(ctx context.Context, cmd *types.Command, userID string) *types.BotResponse {
-	// Handle listening club vote command with user context
-	if cmd.Type == types.CommandLCVote {
+	// Handle platform-specific commands
+	switch cmd.Type {
+	case types.CommandHelp:
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: commands.GetFormattedHelpText("slack"),
+		}
+	case types.CommandLCVote:
 		return h.handleLCVote(ctx, cmd, userID, "Unknown User")
 	}
 

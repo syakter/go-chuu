@@ -19,6 +19,7 @@ A sophisticated multi-platform bot that provides music statistics and social fea
 - **Smart Caching**: In-memory cache with TTL to reduce API calls and improve response times
 - **Robust Error Handling**: Graceful degradation and user-friendly error messages
 - **Input Validation**: Comprehensive validation and sanitization of user commands
+- **Rich Help System**: Platform-specific formatted help with sections, examples, and markdown
 - **Observability**: Structured logging with multiple levels and performance metrics
 - **Security**: Environment-based configuration with no hardcoded secrets
 
@@ -97,7 +98,7 @@ docker run --env-file .env --network=host go-chuu
 ## Commands Reference 📖
 
 ### Basic Usage
-- `!help` - Show all available commands
+- `!help` - Show beautifully formatted help with all available commands
 - `!up` - Display bot uptime
 
 ### Music Discovery

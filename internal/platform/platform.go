@@ -101,9 +101,10 @@ func (b *BaseHandler) ProcessCommand(ctx context.Context, cmd *types.Command) *t
 
 	switch cmd.Type {
 	case types.CommandHelp:
+		// This will be overridden by platform-specific handlers
 		return &types.BotResponse{
 			Type:    types.ResponseTypeText,
-			Content: commands.GetHelpText(),
+			Content: commands.GetHelpText(), // fallback to generic
 		}
 
 	case types.CommandUptime:

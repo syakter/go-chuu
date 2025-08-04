@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/syakter/go-chuu/internal/errors"
+	"github.com/syakter/go-chuu/internal/help"
 	"github.com/syakter/go-chuu/internal/types"
 )
 
@@ -312,56 +313,28 @@ func (p *Parser) isValidPeriod(period string) bool {
 	return false
 }
 
-// GetHelpText returns the help text for commands
+// GetHelpText returns the help text for commands with generic formatting
 func GetHelpText() string {
-	return `Commands:
+	formatter := help.NewFormatter(help.PlatformGeneric)
+	content := help.GetHelpContent()
+	return formatter.Format(content)
+}
 
-` +
-		`!np: Now Playing
-` +
-		`!disco <user> <artist>: Top albums by <artist> for <user>
-` +
-		`!track <user> <period>: Top tracks for <user> in <period>
-` +
-		`!dt <user> <artist>: Top tracks by <artist> for <user>
-` +
-		`!top <user> <period>: Top albums for <user> in <period>
-` +
-		`!ta <user> <period>: Top artists for <user> in <period>
-` +
-		`!rp <user> <limit>: Last <limit> songs played by <user>
-` +
-		`!chart <user> <period>: Visual album chart for <user>
-` +
-		`!kga <period>: Top listened albums in Kagang in <period>
-` +
-		`!kgt <period>: Top listened tracks in Kagang in <period>
-` +
-		`!leaderboard: Leaderboard for previous week
-` +
-		`!artist <artist>: Top <artist> fans in the group
-` +
-		`!t <track> by <artist>: Top fans of specific track
-` +
-		`<album> by <artist>: Top fans of specific album
-` +
-		`!up: Bot uptime
+// GetFormattedHelpText returns platform-specific formatted help text
+func GetFormattedHelpText(platform string) string {
+	var helpPlatform help.Platform
+	switch strings.ToLower(platform) {
+	case "slack":
+		helpPlatform = help.PlatformSlack
+	case "discord":
+		helpPlatform = help.PlatformDiscord
+	default:
+		helpPlatform = help.PlatformGeneric
+	}
 
-` +
-		`📚 Listening Club:
-` +
-		`!lc set Artist - Album: Set the weekly listening club album
-` +
-		`!lc vote <1-10> [comment]: Vote on the current album
-` +
-		`!lc current: Show current listening club album
-` +
-		`!lc results: Show voting results for current album
-` +
-		`!lc clear: Clear current week (admin only)
-
-` +
-		`Periods: 24h, 7d, 1m, 3m, 6m, 1y, overall`
+	formatter := help.NewFormatter(helpPlatform)
+	content := help.GetHelpContent()
+	return formatter.Format(content)
 }
 
 // splitOnLastBy splits a string on the last occurrence of " by " (case insensitive)
