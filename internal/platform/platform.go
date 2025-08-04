@@ -156,7 +156,7 @@ func (b *BaseHandler) ProcessCommand(ctx context.Context, cmd *types.Command) *t
 	case types.CommandDiscoveryTrack:
 		return b.handleDiscoveryTrackCommand(ctx, cmd)
 
-	// Listening Club commands
+	// Listening Club commands (user-specific commands handled by platform handlers)
 	case types.CommandLCSet:
 		return b.handleLCSetCommand(ctx, cmd)
 
@@ -510,7 +510,7 @@ func (b *BaseHandler) formatPeriodText(period string) string {
 
 // Listening Club command handlers
 
-// handleLCSetCommand handles setting the listening club album
+// handleLCSetCommand handles setting the listening club album (fallback implementation)
 func (b *BaseHandler) handleLCSetCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
 	if cmd.Artist == "" || cmd.Album == "" {
 		return &types.BotResponse{
@@ -519,8 +519,8 @@ func (b *BaseHandler) handleLCSetCommand(ctx context.Context, cmd *types.Command
 		}
 	}
 
-	// For now, allow any user to set the album. In production, you might want to restrict this.
-	if err := b.ListeningClub.SetAlbum(cmd.Artist, cmd.Album, "unknown user"); err != nil {
+	// Generic fallback - platform handlers should override this for proper user context
+	if err := b.ListeningClub.SetAlbum(cmd.Artist, cmd.Album, "Anonymous User"); err != nil {
 		b.logger.Error("Failed to set listening club album", "error", err)
 		return &types.BotResponse{
 			Type:  types.ResponseTypeError,
@@ -534,7 +534,7 @@ func (b *BaseHandler) handleLCSetCommand(ctx context.Context, cmd *types.Command
 	}
 }
 
-// handleLCVoteCommand handles voting on the listening club album
+// handleLCVoteCommand handles voting on the listening club album (fallback implementation)
 func (b *BaseHandler) handleLCVoteCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
 	if cmd.Rating < 1 || cmd.Rating > 10 {
 		return &types.BotResponse{
@@ -543,10 +543,8 @@ func (b *BaseHandler) handleLCVoteCommand(ctx context.Context, cmd *types.Comman
 		}
 	}
 
-	// We need user context for voting, but we don't have it in this abstraction
-	// Platform handlers will need to override this method or pass user context
-	// For now, use placeholder values
-	if err := b.ListeningClub.Vote("platform", "user123", "User", cmd.Rating, cmd.Comment); err != nil {
+	// Generic fallback - platform handlers should override this for proper user context
+	if err := b.ListeningClub.Vote("generic", "anonymous", "Anonymous User", cmd.Rating, cmd.Comment); err != nil {
 		b.logger.Error("Failed to record vote", "error", err)
 		return &types.BotResponse{
 			Type:  types.ResponseTypeError,

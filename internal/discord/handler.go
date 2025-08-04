@@ -232,6 +232,8 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command, userID
 		}
 	case types.CommandLCVote:
 		return h.handleLCVote(ctx, cmd, userID, username)
+	case types.CommandLCSet:
+		return h.handleLCSet(ctx, cmd, username)
 	}
 
 	// For all other commands, use the base handler
@@ -264,5 +266,28 @@ func (h *Handler) handleLCVote(ctx context.Context, cmd *types.Command, userID, 
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
 		Content: response,
+	}
+}
+
+// handleLCSet handles listening club album setting with Discord user context
+func (h *Handler) handleLCSet(ctx context.Context, cmd *types.Command, username string) *types.BotResponse {
+	if cmd.Artist == "" || cmd.Album == "" {
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Both artist and album are required. Use: !lc set Artist - Album",
+		}
+	}
+
+	if err := h.ListeningClub.SetAlbum(cmd.Artist, cmd.Album, username); err != nil {
+		h.logger.Error("Failed to set listening club album", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "Failed to set listening club album: " + err.Error(),
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: fmt.Sprintf("📚 This week's listening club album has been set to:\n**%s - %s**\n\nSet by: %s\n\nVote with: !lc vote <1-10> [optional comment]", cmd.Artist, cmd.Album, username),
 	}
 }
