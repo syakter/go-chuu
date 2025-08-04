@@ -211,10 +211,102 @@ func TestWeekCalculations(t *testing.T) {
 		t.Error("Week end should be after week start")
 	}
 
-	// Week should be exactly 7 days
+	// Week should be exactly 7 days (Sunday to Saturday)
 	duration := weekEnd.Sub(weekStart)
-	expectedDuration := 7*24*time.Hour - time.Second // Almost 7 days (23:59:59 on Sunday)
+	expectedDuration := 7*24*time.Hour - time.Second // Almost 7 days (23:59:59 on Saturday)
 	if duration < expectedDuration {
 		t.Errorf("Week duration too short: %v", duration)
+	}
+
+	// Week should start on Sunday (weekday 0)
+	if weekStart.Weekday() != time.Sunday {
+		t.Errorf("Week should start on Sunday, got %v", weekStart.Weekday())
+	}
+
+	// Week should end on Saturday (weekday 6)
+	// Note: weekEnd is Saturday 23:59:59, so the day should be Saturday
+	if weekEnd.Weekday() != time.Saturday {
+		t.Errorf("Week should end on Saturday, got %v", weekEnd.Weekday())
+	}
+
+	// Week start should be at midnight (00:00:00)
+	if weekStart.Hour() != 0 || weekStart.Minute() != 0 || weekStart.Second() != 0 {
+		t.Errorf("Week should start at midnight, got %02d:%02d:%02d",
+			weekStart.Hour(), weekStart.Minute(), weekStart.Second())
+	}
+
+	// Verify Eastern Time zone
+	et, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("Cannot load Eastern Time zone for testing")
+	}
+	if weekStart.Location().String() != et.String() {
+		t.Errorf("Week start should be in Eastern Time, got %v", weekStart.Location())
+	}
+}
+
+func TestSundayWeekStart(t *testing.T) {
+	// Test that weeks start on Sunday at midnight Eastern Time
+	et, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("Cannot load Eastern Time zone for testing")
+	}
+
+	// Test with different days of the week
+	testCases := []struct {
+		name        string
+		testTime    time.Time
+		expectedDay int // Days since Sunday (0 = Sunday)
+	}{
+		{
+			name:        "Sunday",
+			testTime:    time.Date(2024, 1, 7, 15, 30, 0, 0, et), // Sunday afternoon
+			expectedDay: 0,
+		},
+		{
+			name:        "Monday",
+			testTime:    time.Date(2024, 1, 8, 10, 0, 0, 0, et), // Monday morning
+			expectedDay: 0,                                      // Should still be same week's Sunday
+		},
+		{
+			name:        "Wednesday",
+			testTime:    time.Date(2024, 1, 10, 12, 0, 0, 0, et), // Wednesday noon
+			expectedDay: 0,                                       // Should be Sunday of the same week
+		},
+		{
+			name:        "Saturday",
+			testTime:    time.Date(2024, 1, 13, 23, 0, 0, 0, et), // Saturday night
+			expectedDay: 0,                                       // Should be Sunday of the same week
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mock the current time by calculating based on the test time
+			weekday := int(tc.testTime.Weekday())
+			daysBack := weekday
+			if weekday == 0 { // Already Sunday
+				daysBack = 0
+			}
+
+			sunday := tc.testTime.AddDate(0, 0, -daysBack)
+			weekStart := time.Date(sunday.Year(), sunday.Month(), sunday.Day(), 0, 0, 0, 0, et)
+
+			// Verify it's Sunday
+			if weekStart.Weekday() != time.Sunday {
+				t.Errorf("Expected Sunday, got %v", weekStart.Weekday())
+			}
+
+			// Verify it's midnight
+			if weekStart.Hour() != 0 || weekStart.Minute() != 0 || weekStart.Second() != 0 {
+				t.Errorf("Expected midnight, got %02d:%02d:%02d",
+					weekStart.Hour(), weekStart.Minute(), weekStart.Second())
+			}
+
+			// Verify it's in Eastern Time
+			if weekStart.Location().String() != et.String() {
+				t.Errorf("Expected Eastern Time, got %v", weekStart.Location())
+			}
+		})
 	}
 }

@@ -138,7 +138,7 @@ docker run --env-file .env --network=host go-chuu
 2. **Listen & Vote**: Members listen to the album and vote on a 1-10 scale
 3. **Add Comments**: Optional comments provide context for ratings
 4. **View Results**: See average ratings, vote distribution, and individual comments
-5. **Weekly Reset**: Albums are tied to calendar weeks (Monday-Sunday)
+5. **Weekly Reset**: Albums reset every **Sunday at midnight Eastern Time**
 6. **Cross-Platform**: Works on both Slack and Discord with unified voting
 
 **Example Usage:**

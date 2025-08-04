@@ -44,26 +44,40 @@ func GetVoteKey(platform, userID string) string {
 	return platform + ":" + userID
 }
 
-// GetCurrentWeek returns the current week number and year
+// GetCurrentWeek returns the current week number and year based on Eastern Time
 func GetCurrentWeek() (int, int) {
-	now := time.Now()
-	year, week := now.ISOWeek()
+	// Use the week start date to determine the week number
+	// This ensures consistency with our Sunday-based weeks
+	weekStart := GetWeekStart()
+	year, week := weekStart.ISOWeek()
 	return week, year
 }
 
-// GetWeekStart returns the start of the current week (Monday)
+// GetWeekStart returns the start of the current week (Sunday midnight ET)
 func GetWeekStart() time.Time {
-	now := time.Now()
-	weekday := int(now.Weekday())
-	if weekday == 0 { // Sunday
-		weekday = 7
+	// Load Eastern Time zone
+	et, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		// Fallback to UTC if timezone loading fails
+		et = time.UTC
 	}
-	// Go back to Monday
-	monday := now.AddDate(0, 0, -(weekday - 1))
-	return time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, monday.Location())
+
+	// Get current time in Eastern Time
+	now := time.Now().In(et)
+	weekday := int(now.Weekday())
+
+	// Calculate days to go back to Sunday
+	daysBack := weekday
+	if weekday == 0 { // Already Sunday
+		daysBack = 0
+	}
+
+	// Go back to most recent Sunday
+	sunday := now.AddDate(0, 0, -daysBack)
+	return time.Date(sunday.Year(), sunday.Month(), sunday.Day(), 0, 0, 0, 0, et)
 }
 
-// GetWeekEnd returns the end of the current week (Sunday)
+// GetWeekEnd returns the end of the current week (Saturday 11:59:59 PM ET)
 func GetWeekEnd() time.Time {
 	return GetWeekStart().AddDate(0, 0, 6).Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 }
