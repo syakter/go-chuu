@@ -22,6 +22,7 @@ func LoadEmbedded() (*Config, error) {
 		// Set defaults
 		Users:                 DefaultUsers,
 		LogLevel:              getEnv("LOG_LEVEL", "info"),
+		LogFormat:             getEnv("LOG_FORMAT", "pretty"),
 		Port:                  getEnvInt("PORT", 8080),
 		ShutdownTimeout:       getEnvDuration("SHUTDOWN_TIMEOUT", "30s"),
 		MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 10),

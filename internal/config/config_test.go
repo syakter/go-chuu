@@ -93,6 +93,7 @@ func TestValidate(t *testing.T) {
 		cfg := &Config{
 			Users:                 []string{"user1", "user2"},
 			LogLevel:              "info",
+			LogFormat:             "pretty",
 			MaxConcurrentRequests: 5,
 			CacheTTL:              5 * time.Minute,
 		}
@@ -106,6 +107,7 @@ func TestValidate(t *testing.T) {
 		cfg := &Config{
 			Users:                 []string{"user1"},
 			LogLevel:              "invalid",
+			LogFormat:             "pretty",
 			MaxConcurrentRequests: 5,
 			CacheTTL:              5 * time.Minute,
 		}
@@ -115,10 +117,25 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid log format", func(t *testing.T) {
+		cfg := &Config{
+			Users:                 []string{"user1"},
+			LogLevel:              "info",
+			LogFormat:             "invalid",
+			MaxConcurrentRequests: 5,
+			CacheTTL:              5 * time.Minute,
+		}
+
+		if err := cfg.Validate(); err == nil {
+			t.Error("Expected error for invalid log format, got nil")
+		}
+	})
+
 	t.Run("empty users", func(t *testing.T) {
 		cfg := &Config{
 			Users:                 []string{},
 			LogLevel:              "info",
+			LogFormat:             "pretty",
 			MaxConcurrentRequests: 5,
 			CacheTTL:              5 * time.Minute,
 		}
@@ -148,6 +165,30 @@ func TestGetLogLevel(t *testing.T) {
 
 			if level.String() != test.expected {
 				t.Errorf("Expected %s, got %s", test.expected, level.String())
+			}
+		})
+	}
+}
+
+func TestGetLogFormat(t *testing.T) {
+	tests := []struct {
+		format   string
+		expected string
+	}{
+		{"pretty", "pretty"},
+		{"PRETTY", "pretty"},
+		{"json", "json"},
+		{"JSON", "json"},
+		{"Mixed", "mixed"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.format, func(t *testing.T) {
+			cfg := &Config{LogFormat: test.format}
+			format := cfg.GetLogFormat()
+
+			if format != test.expected {
+				t.Errorf("Expected %s, got %s", test.expected, format)
 			}
 		})
 	}
