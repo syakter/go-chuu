@@ -23,6 +23,7 @@ type Config struct {
 	// Application configuration
 	Users           []string      `json:"users"`
 	LogLevel        string        `json:"log_level"`
+	LogFormat       string        `json:"log_format"`
 	Port            int           `json:"port"`
 	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
 
@@ -48,6 +49,7 @@ func Load() (*Config, error) {
 		// Set defaults
 		Users:                 DefaultUsers,
 		LogLevel:              getEnv("LOG_LEVEL", "info"),
+		LogFormat:             getEnv("LOG_FORMAT", "pretty"),
 		Port:                  getEnvInt("PORT", 8080),
 		ShutdownTimeout:       getEnvDuration("SHUTDOWN_TIMEOUT", "30s"),
 		MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 10),
@@ -113,6 +115,19 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid log level: %s (valid: %v)", c.LogLevel, validLogLevels)
 	}
 
+	// Validate log format
+	validLogFormats := []string{"pretty", "json"}
+	validFormat := false
+	for _, format := range validLogFormats {
+		if strings.ToLower(c.LogFormat) == format {
+			validFormat = true
+			break
+		}
+	}
+	if !validFormat {
+		return fmt.Errorf("invalid log format: %s (valid: %v)", c.LogFormat, validLogFormats)
+	}
+
 	return nil
 }
 
@@ -130,6 +145,11 @@ func (c *Config) GetLogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// GetLogFormat returns the log format as a string
+func (c *Config) GetLogFormat() string {
+	return strings.ToLower(c.LogFormat)
 }
 
 // Helper functions for environment variable parsing

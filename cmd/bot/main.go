@@ -3,70 +3,21 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/syakter/go-chuu/internal/cache"
 	"github.com/syakter/go-chuu/internal/charts"
 	"github.com/syakter/go-chuu/internal/commands"
 	"github.com/syakter/go-chuu/internal/config"
 	"github.com/syakter/go-chuu/internal/lastfm"
+	"github.com/syakter/go-chuu/internal/logger"
 	"github.com/syakter/go-chuu/internal/slack"
 )
-
-// PrettyHandler provides colored logging output
-type PrettyHandler struct {
-	slog.Handler
-	logger *log.Logger
-}
-
-func (h *PrettyHandler) Handle(ctx context.Context, r slog.Record) error {
-	level := r.Level.String() + ":"
-
-	switch r.Level {
-	case slog.LevelDebug:
-		level = color.MagentaString(level)
-	case slog.LevelInfo:
-		level = color.BlueString(level)
-	case slog.LevelWarn:
-		level = color.YellowString(level)
-	case slog.LevelError:
-		level = color.RedString(level)
-	}
-
-	timeStr := r.Time.Format("[15:05:05.000]")
-	msg := color.CyanString(r.Message)
-
-	// Format attributes
-	attrs := make([]string, 0, r.NumAttrs())
-	r.Attrs(func(a slog.Attr) bool {
-		attrs = append(attrs, fmt.Sprintf("%s=%v", a.Key, a.Value.Any()))
-		return true
-	})
-
-	if len(attrs) > 0 {
-		for _, attr := range attrs {
-			msg += " " + color.WhiteString(attr)
-		}
-	}
-
-	h.logger.Println(timeStr, level, msg)
-	return nil
-}
-
-func NewPrettyHandler(out io.Writer, level slog.Level) *PrettyHandler {
-	return &PrettyHandler{
-		Handler: slog.NewTextHandler(out, &slog.HandlerOptions{Level: level}),
-		logger:  log.New(out, "", 0),
-	}
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -99,8 +50,11 @@ func run() error {
 	}
 
 	// Setup logging
-	handler := NewPrettyHandler(os.Stdout, cfg.GetLogLevel())
-	logger := slog.New(handler)
+	logger := logger.New(logger.Config{
+		Format: logger.ParseFormat(cfg.GetLogFormat()),
+		Level:  cfg.GetLogLevel(),
+		Output: os.Stdout,
+	})
 	slog.SetDefault(logger)
 
 	logger.Info("Starting go-chuu bot", "version", "2.0.0", "log_level", cfg.LogLevel)
