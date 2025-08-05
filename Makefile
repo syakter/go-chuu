@@ -1,4 +1,27 @@
-.PHONY: build test clean run docker-build docker-run help
+.PHONY: build build-prod build-with-keys build-windows build-windows-with-keys test clean run docker-build docker-run help
+
+# Build variables
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Build flags
+BUILD_LDFLAGS = -X github.com/syakter/go-chuu/internal/buildinfo.Version=$(VERSION) \
+				-X github.com/syakter/go-chuu/internal/buildinfo.GitCommit=$(GIT_COMMIT) \
+				-X github.com/syakter/go-chuu/internal/buildinfo.GitBranch=$(GIT_BRANCH) \
+				-X github.com/syakter/go-chuu/internal/buildinfo.BuildTime=$(BUILD_TIME)
+
+# Key embedding flags (loaded from .env if available)
+KEY_LDFLAGS = $(if $(SLACK_BOT_TOKEN),-X 'github.com/syakter/go-chuu/internal/config.EmbeddedSlackBotToken=$(SLACK_BOT_TOKEN)') \
+			  $(if $(SLACK_APP_TOKEN),-X 'github.com/syakter/go-chuu/internal/config.EmbeddedSlackAppToken=$(SLACK_APP_TOKEN)') \
+			  $(if $(LASTFM_API_KEY),-X 'github.com/syakter/go-chuu/internal/config.EmbeddedLastFMAPIKey=$(LASTFM_API_KEY)') \
+			  $(if $(LASTFM_API_SECRET),-X 'github.com/syakter/go-chuu/internal/config.EmbeddedLastFMSecret=$(LASTFM_API_SECRET)') \
+			  $(if $(SLACK_CHANNEL_ID),-X 'github.com/syakter/go-chuu/internal/config.EmbeddedSlackChannelID=$(SLACK_CHANNEL_ID)')
+
+# Combined flags
+LDFLAGS = $(BUILD_LDFLAGS)
+LDFLAGS_WITH_KEYS = $(BUILD_LDFLAGS) $(KEY_LDFLAGS)
 
 # Default target
 all: build
@@ -6,12 +29,63 @@ all: build
 # Build the application
 build:
 	@echo "Building go-chuu..."
-	go build -o go-chuu ./cmd/bot
+	go build -ldflags "$(LDFLAGS)" -o go-chuu ./cmd/bot
 
 # Build for production with optimizations
 build-prod:
 	@echo "Building go-chuu for production..."
-	CGO_ENABLED=0 go build -ldflags "-w -s" -o go-chuu ./cmd/bot
+	CGO_ENABLED=0 go build -ldflags "-w -s $(LDFLAGS)" -o go-chuu ./cmd/bot
+
+# Build with embedded API keys (requires .env file)
+build-with-keys:
+	@echo "Building go-chuu with embedded API keys..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Please create one with your API keys."; exit 1; fi
+	@echo "Loading API keys from .env file..."
+	$(eval include .env)
+	$(eval export)
+	@if [ -z "$(SLACK_BOT_TOKEN)" ] || [ -z "$(SLACK_APP_TOKEN)" ] || [ -z "$(LASTFM_API_KEY)" ] || [ -z "$(LASTFM_API_SECRET)" ]; then \
+		echo "Error: Missing required API keys in .env file"; \
+		echo "Required: SLACK_BOT_TOKEN, SLACK_APP_TOKEN, LASTFM_API_KEY, LASTFM_API_SECRET"; \
+		exit 1; \
+	fi
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" \
+	SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" \
+	LASTFM_API_KEY="$(LASTFM_API_KEY)" \
+	LASTFM_API_SECRET="$(LASTFM_API_SECRET)" \
+	SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	go build -ldflags "$(LDFLAGS_WITH_KEYS)" -o go-chuu-embedded ./cmd/bot
+	@echo "✅ Build completed successfully!"
+	@echo "📦 Binary: go-chuu-embedded"
+	@echo "🔐 API keys are embedded in the binary"
+
+# Build for Windows (cross-compile from macOS/Linux)
+build-windows:
+	@echo "Building go-chuu for Windows..."
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o go-chuu.exe ./cmd/bot
+	@echo "✅ Windows build completed: go-chuu.exe"
+
+# Build for Windows with embedded API keys
+build-windows-with-keys:
+	@echo "Building go-chuu for Windows with embedded API keys..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Please create one with your API keys."; exit 1; fi
+	@echo "Loading API keys from .env file..."
+	$(eval include .env)
+	$(eval export)
+	@if [ -z "$(SLACK_BOT_TOKEN)" ] || [ -z "$(SLACK_APP_TOKEN)" ] || [ -z "$(LASTFM_API_KEY)" ] || [ -z "$(LASTFM_API_SECRET)" ]; then \
+		echo "Error: Missing required API keys in .env file"; \
+		echo "Required: SLACK_BOT_TOKEN, SLACK_APP_TOKEN, LASTFM_API_KEY, LASTFM_API_SECRET"; \
+		exit 1; \
+	fi
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" \
+	SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" \
+	LASTFM_API_KEY="$(LASTFM_API_KEY)" \
+	LASTFM_API_SECRET="$(LASTFM_API_SECRET)" \
+	SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS_WITH_KEYS)" -o go-chuu-embedded.exe ./cmd/bot
+	@echo "✅ Windows build with embedded keys completed successfully!"
+	@echo "📦 Binary: go-chuu-embedded.exe"
+	@echo "🔐 API keys are embedded in the binary"
+	@echo "📋 Ready to send to your Windows teammate!"
 
 # Run tests
 test:
@@ -35,7 +109,7 @@ run:
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	rm -f go-chuu coverage.out coverage.html
+	rm -f go-chuu go-chuu-embedded go-chuu.exe go-chuu-embedded.exe coverage.out coverage.html
 	rm -rf dist/
 
 # Format code
@@ -89,12 +163,37 @@ install-tools:
 release:
 	@echo "Creating release builds..."
 	mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s" -o dist/go-chuu-linux-amd64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-w -s" -o dist/go-chuu-linux-arm64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-w -s" -o dist/go-chuu-darwin-amd64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s" -o dist/go-chuu-darwin-arm64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s" -o dist/go-chuu-windows-amd64.exe ./cmd/bot
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-linux-amd64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-linux-arm64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-darwin-amd64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-darwin-arm64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-windows-amd64.exe ./cmd/bot
 	@echo "Release builds created in dist/"
+
+# Create release builds with embedded keys (requires .env file)
+release-with-keys:
+	@echo "Creating release builds with embedded API keys..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Please create one with your API keys."; exit 1; fi
+	@echo "Loading API keys from .env file..."
+	$(eval include .env)
+	$(eval export)
+	@if [ -z "$(SLACK_BOT_TOKEN)" ] || [ -z "$(SLACK_APP_TOKEN)" ] || [ -z "$(LASTFM_API_KEY)" ] || [ -z "$(LASTFM_API_SECRET)" ]; then \
+		echo "Error: Missing required API keys in .env file"; \
+		echo "Required: SLACK_BOT_TOKEN, SLACK_APP_TOKEN, LASTFM_API_KEY, LASTFM_API_SECRET"; \
+		exit 1; \
+	fi
+	mkdir -p dist
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" LASTFM_API_KEY="$(LASTFM_API_KEY)" LASTFM_API_SECRET="$(LASTFM_API_SECRET)" SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS_WITH_KEYS)" -o dist/go-chuu-embedded-linux-amd64 ./cmd/bot
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" LASTFM_API_KEY="$(LASTFM_API_KEY)" LASTFM_API_SECRET="$(LASTFM_API_SECRET)" SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-w -s $(LDFLAGS_WITH_KEYS)" -o dist/go-chuu-embedded-linux-arm64 ./cmd/bot
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" LASTFM_API_KEY="$(LASTFM_API_KEY)" LASTFM_API_SECRET="$(LASTFM_API_SECRET)" SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS_WITH_KEYS)" -o dist/go-chuu-embedded-darwin-amd64 ./cmd/bot
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" LASTFM_API_KEY="$(LASTFM_API_KEY)" LASTFM_API_SECRET="$(LASTFM_API_SECRET)" SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s $(LDFLAGS_WITH_KEYS)" -o dist/go-chuu-embedded-darwin-arm64 ./cmd/bot
+	SLACK_BOT_TOKEN="$(SLACK_BOT_TOKEN)" SLACK_APP_TOKEN="$(SLACK_APP_TOKEN)" LASTFM_API_KEY="$(LASTFM_API_KEY)" LASTFM_API_SECRET="$(LASTFM_API_SECRET)" SLACK_CHANNEL_ID="$(SLACK_CHANNEL_ID)" \
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS_WITH_KEYS)" -o dist/go-chuu-embedded-windows-amd64.exe ./cmd/bot
+	@echo "✅ Release builds with embedded keys created in dist/"
 
 # Setup development environment
 setup:
@@ -109,21 +208,30 @@ setup:
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  build         - Build the application"
-	@echo "  build-prod    - Build for production with optimizations"
-	@echo "  test          - Run tests"
-	@echo "  test-coverage - Run tests with coverage report"
-	@echo "  run           - Run the application (requires .env)"
-	@echo "  clean         - Clean build artifacts"
-	@echo "  fmt           - Format code"
-	@echo "  lint          - Lint code (requires golangci-lint)"
-	@echo "  vet           - Vet code"
-	@echo "  update-deps   - Update and vendor dependencies"
-	@echo "  docker-build  - Build Docker image"
-	@echo "  docker-run    - Run Docker container"
-	@echo "  docker-up     - Start with Docker Compose"
-	@echo "  docker-down   - Stop Docker Compose"
-	@echo "  release       - Create release builds for multiple platforms"
-	@echo "  setup         - Setup development environment"
-	@echo "  install-tools - Install development tools"
-	@echo "  help          - Show this help message"
+	@echo "  build                    - Build the application"
+	@echo "  build-prod               - Build for production with optimizations"
+	@echo "  build-with-keys          - Build with embedded API keys (requires .env)"
+	@echo "  build-windows            - Build for Windows (cross-compile)"
+	@echo "  build-windows-with-keys  - Build for Windows with embedded keys"
+	@echo "  test                     - Run tests"
+	@echo "  test-coverage            - Run tests with coverage report"
+	@echo "  run                      - Run the application (requires .env)"
+	@echo "  clean                    - Clean build artifacts"
+	@echo "  fmt                      - Format code"
+	@echo "  lint                     - Lint code (requires golangci-lint)"
+	@echo "  vet                      - Vet code"
+	@echo "  update-deps              - Update and vendor dependencies"
+	@echo "  docker-build             - Build Docker image"
+	@echo "  docker-run               - Run Docker container"
+	@echo "  docker-up                - Start with Docker Compose"
+	@echo "  docker-down              - Stop Docker Compose"
+	@echo "  release                  - Create release builds for multiple platforms"
+	@echo "  release-with-keys        - Create release builds with embedded keys"
+	@echo "  setup                    - Setup development environment"
+	@echo "  install-tools            - Install development tools"
+	@echo "  help                     - Show this help message"
+	@echo ""
+	@echo "Cross-platform workflow (ARM Mac → Windows):"
+	@echo "  1. make build-windows-with-keys  # Creates go-chuu-embedded.exe"
+	@echo "  2. Send go-chuu-embedded.exe to your Windows teammate"
+	@echo "  3. They can run it directly (no .env file needed)"

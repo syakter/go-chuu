@@ -168,14 +168,29 @@ go vet ./...
 
 ### Building
 ```bash
+# Build for current platform (with build info)
+make build
+
+# Build with embedded API keys (requires .env file)
+make build-with-keys
+
+# Cross-compile for Windows (perfect for ARM Mac → Windows workflow)
+make build-windows-with-keys
+
+# Create release builds for all platforms
+make release-with-keys
+
+# See all available targets
+make help
+```
+
+**Legacy commands (still work):**
+```bash
 # Build for current platform
 go build -o go-chuu ./cmd/bot
 
 # Cross-compile for Linux
 GOOS=linux GOARCH=amd64 go build -o go-chuu-linux ./cmd/bot
-
-# Build with version info
-go build -ldflags "-X main.version=v2.0.0" -o go-chuu ./cmd/bot
 ```
 
 ## Deployment 🚀
