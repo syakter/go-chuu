@@ -260,6 +260,33 @@ func TestLoadWithDotEnv(t *testing.T) {
 	}
 }
 
+func TestDefaultUsersCount(t *testing.T) {
+	t.Run("default users list has 24 users", func(t *testing.T) {
+		expectedCount := 24
+		actualCount := len(DefaultUsers)
+
+		if actualCount != expectedCount {
+			t.Errorf("Expected DefaultUsers to contain %d users, but got %d users", expectedCount, actualCount)
+		}
+
+		// Verify no empty usernames
+		for i, user := range DefaultUsers {
+			if user == "" {
+				t.Errorf("DefaultUsers[%d] is empty", i)
+			}
+		}
+
+		// Verify no duplicate usernames
+		userSet := make(map[string]bool)
+		for i, user := range DefaultUsers {
+			if userSet[user] {
+				t.Errorf("DefaultUsers[%d] = %q is a duplicate", i, user)
+			}
+			userSet[user] = true
+		}
+	})
+}
+
 func TestGodotenvIntegration(t *testing.T) {
 	// Test that godotenv can load from a string (simulating .env file)
 	envContent := `SLACK_BOT_TOKEN=xoxb-from-dotenv
