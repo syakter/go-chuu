@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/fatih/color"
@@ -138,7 +137,9 @@ func run() error {
 
 	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// Use os.Interrupt for cross-platform compatibility (Ctrl+C on Windows, SIGINT on Unix)
+	// Note: SIGTERM is not available on Windows, so we avoid it for better portability
+	signal.Notify(sigChan, os.Interrupt)
 
 	go func() {
 		sig := <-sigChan
