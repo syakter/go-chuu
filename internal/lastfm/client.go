@@ -16,9 +16,21 @@ import (
 	"github.com/syakter/go-chuu/internal/types"
 )
 
+// APIInterface defines the interface for Last.fm API operations
+type APIInterface interface {
+	GetTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error)
+	GetTopArtists(ctx context.Context, params map[string]interface{}) (*TopArtistsResponse, error)
+	GetTopTracks(ctx context.Context, params map[string]interface{}) (*TopTracksResponse, error)
+	GetRecentTracks(ctx context.Context, params map[string]interface{}) (*RecentTracksResponse, error)
+	GetWeeklyArtistChart(ctx context.Context, params map[string]interface{}) (*WeeklyArtistChartResponse, error)
+	GetArtistInfo(ctx context.Context, params map[string]interface{}) (*ArtistInfoResponse, error)
+	GetAlbumInfo(ctx context.Context, params map[string]interface{}) (*AlbumInfoResponse, error)
+	GetTrackInfo(ctx context.Context, params map[string]interface{}) (*TrackInfoResponse, error)
+}
+
 // Client wraps the Last.fm API with enhanced functionality
 type Client struct {
-	api                   *API
+	api                   APIInterface
 	cache                 cache.Cache
 	config                *config.Config
 	logger                *slog.Logger
@@ -43,7 +55,7 @@ func NewClient(cfg *config.Config, cache cache.Cache, logger *slog.Logger) *Clie
 }
 
 // GetAPI returns the underlying Last.fm API client
-func (c *Client) GetAPI() *API {
+func (c *Client) GetAPI() APIInterface {
 	return c.api
 }
 
