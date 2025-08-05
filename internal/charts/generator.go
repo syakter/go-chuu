@@ -21,7 +21,6 @@ import (
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/lastfm"
 	"github.com/syakter/go-chuu/internal/types"
-	lastfmapi "github.com/syakter/go-lastfm/lastfm"
 )
 
 // Generator handles chart generation
@@ -97,14 +96,14 @@ func (g *Generator) fetchAlbumData(ctx context.Context, username, period string)
 
 	formattedPeriod := g.formatPeriodForAPI(period)
 
-	result, err := g.lastfmClient.GetAPI().User.GetTopAlbums(map[string]interface{}{
+	result, err := g.lastfmClient.GetAPI().GetTopAlbums(ctx, map[string]interface{}{
 		"user":   username,
 		"period": formattedPeriod,
 		"limit":  "9", // We only need 9 albums for 3x3 grid
 	})
 	if err != nil {
 		// Check for common Last.fm API errors
-		if lastfmErr, ok := err.(*lastfmapi.LastfmError); ok {
+		if lastfmErr, ok := err.(*lastfm.APIError); ok {
 			switch lastfmErr.Code {
 			case 6: // User not found
 				return nil, fmt.Errorf("Last.fm user '%s' not found", username)
@@ -120,18 +119,18 @@ func (g *Generator) fetchAlbumData(ctx context.Context, username, period string)
 	}
 
 	var albums []types.Album
-	for _, album := range result.Albums {
+	for _, album := range result.TopAlbums.Albums {
 		// Find the largest image URL
 		imageURL := ""
 		for _, img := range album.Images {
 			if img.Size == "large" || img.Size == "extralarge" {
-				imageURL = img.Url
+				imageURL = img.URL
 				break
 			}
 		}
 		// Fallback to any available image
 		if imageURL == "" && len(album.Images) > 0 {
-			imageURL = album.Images[len(album.Images)-1].Url
+			imageURL = album.Images[len(album.Images)-1].URL
 		}
 
 		albums = append(albums, types.Album{
@@ -159,7 +158,7 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 	const maxPages = 10       // Limit to prevent infinite loops
 
 	for page <= maxPages {
-		result, err := g.lastfmClient.GetAPI().User.GetRecentTracks(map[string]interface{}{
+		result, err := g.lastfmClient.GetAPI().GetRecentTracks(ctx, map[string]interface{}{
 			"user":  username,
 			"limit": strconv.Itoa(tracksPerPage),
 			"page":  strconv.Itoa(page),
@@ -167,7 +166,7 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 		})
 		if err != nil {
 			// Check for common Last.fm API errors
-			if lastfmErr, ok := err.(*lastfmapi.LastfmError); ok {
+			if lastfmErr, ok := err.(*lastfm.APIError); ok {
 				switch lastfmErr.Code {
 				case 6: // User not found
 					return nil, fmt.Errorf("Last.fm user '%s' not found", username)
@@ -182,12 +181,12 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 			return nil, fmt.Errorf("failed to get recent tracks from Last.fm: %w", err)
 		}
 
-		if len(result.Tracks) == 0 {
+		if len(result.RecentTracks.Tracks) == 0 {
 			break // No more tracks
 		}
 
 		// Process tracks and aggregate by album
-		for _, track := range result.Tracks {
+		for _, track := range result.RecentTracks.Tracks {
 			// Skip tracks without album information
 			if track.Album.Name == "" || track.Artist.Name == "" {
 				continue
@@ -199,8 +198,8 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 			}
 
 			// Check if track is within 24 hours (additional safety check)
-			if track.Date.Uts != "" {
-				uts, err := strconv.ParseInt(track.Date.Uts, 10, 64)
+			if track.Date.UTS != "" {
+				uts, err := strconv.ParseInt(track.Date.UTS, 10, 64)
 				if err == nil {
 					trackTime := time.Unix(uts, 0)
 					if trackTime.Before(twentyFourHoursAgo) {
@@ -219,13 +218,13 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 				imageURL := ""
 				for _, img := range track.Images {
 					if img.Size == "large" || img.Size == "extralarge" {
-						imageURL = img.Url
+						imageURL = img.URL
 						break
 					}
 				}
 				// Fallback to any available image
 				if imageURL == "" && len(track.Images) > 0 {
-					imageURL = track.Images[len(track.Images)-1].Url
+					imageURL = track.Images[len(track.Images)-1].URL
 				}
 
 				albumCounts[albumKey] = &albumInfo{
@@ -240,7 +239,7 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 		}
 
 		// If we got fewer tracks than requested, we've reached the end
-		if len(result.Tracks) < tracksPerPage {
+		if len(result.RecentTracks.Tracks) < tracksPerPage {
 			break
 		}
 

@@ -14,12 +14,11 @@ import (
 	"github.com/syakter/go-chuu/internal/config"
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/types"
-	"github.com/syakter/go-lastfm/lastfm"
 )
 
 // Client wraps the Last.fm API with enhanced functionality
 type Client struct {
-	api                   *lastfm.Api
+	api                   *API
 	cache                 cache.Cache
 	config                *config.Config
 	logger                *slog.Logger
@@ -29,7 +28,7 @@ type Client struct {
 
 // NewClient creates a new Last.fm client
 func NewClient(cfg *config.Config, cache cache.Cache, logger *slog.Logger) *Client {
-	api := lastfm.New(cfg.LastFMAPIKey, cfg.LastFMAPISecret)
+	api := NewAPI(cfg.LastFMAPIKey, cfg.LastFMAPISecret)
 
 	c := &Client{
 		api:                   api,
@@ -44,7 +43,7 @@ func NewClient(cfg *config.Config, cache cache.Cache, logger *slog.Logger) *Clie
 }
 
 // GetAPI returns the underlying Last.fm API client
-func (c *Client) GetAPI() *lastfm.Api {
+func (c *Client) GetAPI() *API {
 	return c.api
 }
 
@@ -91,7 +90,7 @@ func (c *Client) fetchArtistScrobbles(ctx context.Context, artistName string) ([
 				return
 			}
 
-			result, err := c.api.Artist.GetInfo(lastfm.P{"artist": artistName, "username": user})
+			result, err := c.api.GetArtistInfo(ctx, map[string]interface{}{"artist": artistName, "username": user})
 			if err != nil {
 				c.logger.Warn("Failed to get artist info", "user", user, "artist", artistName, "error", err)
 				// Don't fail the entire request for one user
@@ -102,8 +101,8 @@ func (c *Client) fetchArtistScrobbles(ctx context.Context, artistName string) ([
 			}
 
 			playcount := 0
-			if result.Stats.UserPlays != "" {
-				if pc, err := strconv.Atoi(result.Stats.UserPlays); err == nil {
+			if result.Artist.Stats.UserPlays != "" {
+				if pc, err := strconv.Atoi(result.Artist.Stats.UserPlays); err == nil {
 					playcount = pc
 				}
 			}
@@ -181,7 +180,7 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 				return
 			}
 
-			result, err := c.api.Album.GetInfo(lastfm.P{"artist": artistName, "album": albumName, "username": user})
+			result, err := c.api.GetAlbumInfo(ctx, map[string]interface{}{"artist": artistName, "album": albumName, "username": user})
 			if err != nil {
 				c.logger.Warn("Failed to get album info", "user", user, "artist", artistName, "album", albumName, "error", err)
 				mu.Lock()
@@ -191,8 +190,8 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 			}
 
 			playcount := 0
-			if result.UserPlayCount != "" {
-				if pc, err := strconv.Atoi(result.UserPlayCount); err == nil {
+			if result.Album.UserPlayCount != "" {
+				if pc, err := strconv.Atoi(result.Album.UserPlayCount); err == nil {
 					playcount = pc
 				}
 			}
@@ -267,7 +266,7 @@ func (c *Client) fetchTrackScrobbles(ctx context.Context, artistName, trackName 
 				return
 			}
 
-			result, err := c.api.Track.GetInfo(lastfm.P{"artist": artistName, "track": trackName, "username": user})
+			result, err := c.api.GetTrackInfo(ctx, map[string]interface{}{"artist": artistName, "track": trackName, "username": user})
 			if err != nil {
 				c.logger.Warn("Failed to get track info", "user", user, "artist", artistName, "track", trackName, "error", err)
 				mu.Lock()
@@ -277,8 +276,8 @@ func (c *Client) fetchTrackScrobbles(ctx context.Context, artistName, trackName 
 			}
 
 			playcount := 0
-			if result.UserPlayCount != "" {
-				if pc, err := strconv.Atoi(result.UserPlayCount); err == nil {
+			if result.Track.UserPlayCount != "" {
+				if pc, err := strconv.Atoi(result.Track.UserPlayCount); err == nil {
 					playcount = pc
 				}
 			}
@@ -331,14 +330,14 @@ func (c *Client) GetNowPlaying(ctx context.Context) (map[string]string, error) {
 				return
 			}
 
-			result, err := c.api.User.GetRecentTracks(lastfm.P{"user": user, "limit": 1})
+			result, err := c.api.GetRecentTracks(ctx, map[string]interface{}{"user": user, "limit": 1})
 			if err != nil {
 				c.logger.Warn("Failed to get recent tracks", "user", user, "error", err)
 				return
 			}
 
-			if len(result.Tracks) > 0 {
-				track := result.Tracks[0]
+			if len(result.RecentTracks.Tracks) > 0 {
+				track := result.RecentTracks.Tracks[0]
 				if track.NowPlaying == "true" {
 					trackInfo := fmt.Sprintf("%s - %s", track.Artist.Name, track.Name)
 					mu.Lock()
@@ -406,13 +405,13 @@ func (c *Client) GetUserTopAlbums(ctx context.Context, username, period string, 
 func (c *Client) fetchUserTopAlbums(ctx context.Context, username, period string, limit int) ([]string, error) {
 	period = c.normalizePeriod(period)
 
-	result, err := c.api.User.GetTopAlbums(lastfm.P{"user": username, "period": period, "limit": limit})
+	result, err := c.api.GetTopAlbums(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
 	if err != nil {
 		return nil, err
 	}
 
 	var albums []string
-	for i, album := range result.Albums {
+	for i, album := range result.TopAlbums.Albums {
 		if i >= limit {
 			break
 		}
@@ -448,13 +447,13 @@ func (c *Client) GetUserTopArtists(ctx context.Context, username, period string,
 func (c *Client) fetchUserTopArtists(ctx context.Context, username, period string, limit int) ([]string, error) {
 	period = c.normalizePeriod(period)
 
-	result, err := c.api.User.GetTopArtists(lastfm.P{"user": username, "period": period, "limit": limit})
+	result, err := c.api.GetTopArtists(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
 	if err != nil {
 		return nil, err
 	}
 
 	var artists []string
-	for i, artist := range result.Artists {
+	for i, artist := range result.TopArtists.Artists {
 		if i >= limit {
 			break
 		}
@@ -487,13 +486,13 @@ func (c *Client) GetUserRecentTracks(ctx context.Context, username string, limit
 
 // fetchUserRecentTracks fetches user recent tracks from the API
 func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, limit int) ([]string, error) {
-	result, err := c.api.User.GetRecentTracks(lastfm.P{"user": username, "limit": limit})
+	result, err := c.api.GetRecentTracks(ctx, map[string]interface{}{"user": username, "limit": limit})
 	if err != nil {
 		return nil, err
 	}
 
 	var tracks []string
-	for i, track := range result.Tracks {
+	for i, track := range result.RecentTracks.Tracks {
 		if i >= limit {
 			break
 		}
@@ -511,13 +510,13 @@ func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, lim
 func (c *Client) fetchUserTopTracks(ctx context.Context, username, period string, limit int) ([]string, error) {
 	period = c.normalizePeriod(period)
 
-	result, err := c.api.User.GetTopTracks(lastfm.P{"user": username, "period": period, "limit": limit})
+	result, err := c.api.GetTopTracks(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
 	if err != nil {
 		return nil, err
 	}
 
 	var tracks []string
-	for i, track := range result.Tracks {
+	for i, track := range result.TopTracks.Tracks {
 		if i >= limit {
 			break
 		}
@@ -572,14 +571,14 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 			fromTimestamp := strconv.FormatInt(fromTime.Unix(), 10)
 			toTimestamp := strconv.FormatInt(toTime.Unix(), 10)
 
-			artistChart, err := c.api.User.GetWeeklyArtistChart(lastfm.P{"user": user, "from": fromTimestamp, "to": toTimestamp})
+			artistChart, err := c.api.GetWeeklyArtistChart(ctx, map[string]interface{}{"user": user, "from": fromTimestamp, "to": toTimestamp})
 			if err != nil {
 				c.logger.Warn("Failed to get weekly artist chart", "user", user, "error", err)
 				return
 			}
 
 			totalPlayCount := 0
-			for _, artist := range artistChart.Artists {
+			for _, artist := range artistChart.WeeklyArtistChart.Artists {
 				if playcount, err := strconv.Atoi(artist.PlayCount); err == nil {
 					totalPlayCount += playcount
 				}
