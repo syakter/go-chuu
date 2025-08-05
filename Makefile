@@ -1,17 +1,29 @@
 .PHONY: build test clean run docker-build docker-run help
 
+# Build variables
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Build flags
+LDFLAGS = -X github.com/syakter/go-chuu/internal/buildinfo.Version=$(VERSION) \
+		  -X github.com/syakter/go-chuu/internal/buildinfo.GitCommit=$(GIT_COMMIT) \
+		  -X github.com/syakter/go-chuu/internal/buildinfo.GitBranch=$(GIT_BRANCH) \
+		  -X github.com/syakter/go-chuu/internal/buildinfo.BuildTime=$(BUILD_TIME)
+
 # Default target
 all: build
 
 # Build the application
 build:
 	@echo "Building go-chuu..."
-	go build -o go-chuu ./cmd/bot
+	go build -ldflags "$(LDFLAGS)" -o go-chuu ./cmd/bot
 
 # Build for production with optimizations
 build-prod:
 	@echo "Building go-chuu for production..."
-	CGO_ENABLED=0 go build -ldflags "-w -s" -o go-chuu ./cmd/bot
+	CGO_ENABLED=0 go build -ldflags "-w -s $(LDFLAGS)" -o go-chuu ./cmd/bot
 
 # Run tests
 test:
@@ -89,11 +101,11 @@ install-tools:
 release:
 	@echo "Creating release builds..."
 	mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s" -o dist/go-chuu-linux-amd64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-w -s" -o dist/go-chuu-linux-arm64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-w -s" -o dist/go-chuu-darwin-amd64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s" -o dist/go-chuu-darwin-arm64 ./cmd/bot
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s" -o dist/go-chuu-windows-amd64.exe ./cmd/bot
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-linux-amd64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-linux-arm64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-darwin-amd64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-darwin-arm64 ./cmd/bot
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-w -s $(LDFLAGS)" -o dist/go-chuu-windows-amd64.exe ./cmd/bot
 	@echo "Release builds created in dist/"
 
 # Setup development environment

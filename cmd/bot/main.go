@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/syakter/go-chuu/internal/buildinfo"
 	"github.com/syakter/go-chuu/internal/cache"
 	"github.com/syakter/go-chuu/internal/charts"
 	"github.com/syakter/go-chuu/internal/commands"
@@ -57,7 +58,17 @@ func run() error {
 	})
 	slog.SetDefault(logger)
 
-	logger.Info("Starting go-chuu bot", "version", "2.0.0", "log_level", cfg.LogLevel)
+	// Log build information at startup
+	buildInfo := buildinfo.Get()
+	logger.Info("Starting go-chuu bot",
+		"version", buildInfo.Version,
+		"git_commit", buildInfo.GitCommit,
+		"git_branch", buildInfo.GitBranch,
+		"build_time", buildInfo.BuildTime,
+		"go_version", buildInfo.GoVersion,
+		"go_os", buildInfo.GoOS,
+		"go_arch", buildInfo.GoArch,
+		"log_level", cfg.LogLevel)
 
 	// Create cache
 	var botCache cache.Cache
