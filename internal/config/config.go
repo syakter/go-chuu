@@ -49,7 +49,7 @@ func Load() (*Config, error) {
 	config := &Config{
 		// Set defaults
 		Users:                 DefaultUsers,
-		LogLevel:              getEnv("LOG_LEVEL", "info"),
+		LogLevel:              getEnv("LOG_LEVEL", "debug"),
 		LogFormat:             getEnv("LOG_FORMAT", "pretty"),
 		Port:                  getEnvInt("PORT", 8080),
 		ShutdownTimeout:       getEnvDuration("SHUTDOWN_TIMEOUT", "30s"),
