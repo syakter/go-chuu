@@ -269,7 +269,7 @@ func (p *Parser) validateCommand(command *types.Command) error {
 	// Validate period if specified
 	if command.Period != "" {
 		if !p.isValidPeriod(command.Period) {
-			return errors.NewValidationError("invalid period: " + command.Period + " (valid: 7d, 1m, 3m, 6m, 1y, overall)")
+			return errors.NewValidationError("invalid period: " + command.Period + " (valid: 24h, 7d, 1m, 3m, 6m, 1y, overall)")
 		}
 	}
 
