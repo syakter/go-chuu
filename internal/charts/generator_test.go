@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/fogleman/gg"
+	"github.com/syakter/go-chuu/internal/cache"
+	"github.com/syakter/go-chuu/internal/config"
+	"github.com/syakter/go-chuu/internal/lastfm"
 	"github.com/syakter/go-chuu/internal/types"
-	"github.com/syakter/go-lastfm/lastfm"
 )
 
 func TestGenerator_CreateAlbumChart(t *testing.T) {
@@ -21,10 +23,23 @@ func TestGenerator_CreateAlbumChart(t *testing.T) {
 
 	// Create temp directory for test
 	tempDir := filepath.Join(os.TempDir(), "test-charts")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
+
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
 
 	// Create generator
-	generator := NewGenerator(logger, tempDir, lastfmAPI)
+	generator := NewGenerator(logger, tempDir, lastfmClient)
 
 	// Test EnsureTempDir
 	err := generator.EnsureTempDir()
@@ -70,9 +85,22 @@ func TestGenerator_FetchAlbumData_24h(t *testing.T) {
 	// Test that fetchAlbumData correctly handles 24h period
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	tempDir := filepath.Join(os.TempDir(), "test-charts-24h")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
 
-	generator := NewGenerator(logger, tempDir, lastfmAPI)
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
+
+	generator := NewGenerator(logger, tempDir, lastfmClient)
 
 	ctx := context.Background()
 
@@ -102,8 +130,25 @@ func TestGenerator_FetchAlbumData_24h(t *testing.T) {
 
 func TestGenerator_FormatPeriodForAPI(t *testing.T) {
 	tempDir := filepath.Join(os.TempDir(), "test-charts")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
-	generator := NewGenerator(nil, tempDir, lastfmAPI)
+
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create logger that discards output for tests
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
+
+	generator := NewGenerator(nil, tempDir, lastfmClient)
 
 	tests := []struct {
 		input    string
@@ -137,8 +182,22 @@ func TestGenerator_FormatPeriodForAPI(t *testing.T) {
 func TestGenerator_DownloadAlbumArt(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	tempDir := filepath.Join(os.TempDir(), "test-charts")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
-	generator := NewGenerator(logger, tempDir, lastfmAPI)
+
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
+
+	generator := NewGenerator(logger, tempDir, lastfmClient)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -160,8 +219,25 @@ func TestGenerator_DownloadAlbumArt(t *testing.T) {
 
 func TestGenerator_TruncateText(t *testing.T) {
 	tempDir := filepath.Join(os.TempDir(), "test-charts")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
-	generator := NewGenerator(nil, tempDir, lastfmAPI)
+
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create logger that discards output for tests
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
+
+	generator := NewGenerator(nil, tempDir, lastfmClient)
 
 	tests := []struct {
 		input     string
@@ -193,9 +269,22 @@ func TestGenerator_CreateAlbumChartWithText(t *testing.T) {
 	// Test that chart creation works with text overlays
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	tempDir := filepath.Join(os.TempDir(), "test-charts-text")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
 
-	generator := NewGenerator(logger, tempDir, lastfmAPI)
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
+
+	generator := NewGenerator(logger, tempDir, lastfmClient)
 
 	err := generator.EnsureTempDir()
 	if err != nil {
@@ -245,9 +334,22 @@ func TestGenerator_LoadFont(t *testing.T) {
 	// Test font loading functionality
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	tempDir := filepath.Join(os.TempDir(), "test-font-loading")
-	lastfmAPI := lastfm.New("test-key", "test-secret")
 
-	generator := NewGenerator(logger, tempDir, lastfmAPI)
+	// Create test config
+	testConfig := &config.Config{
+		LastFMAPIKey:          "test-key",
+		LastFMAPISecret:       "test-secret",
+		MaxConcurrentRequests: 5,
+		Users:                 []string{"testuser"},
+	}
+
+	// Create test cache
+	testCache := cache.NewInMemoryCache(100)
+
+	// Create local lastfm client
+	lastfmClient := lastfm.NewClient(testConfig, testCache, logger)
+
+	generator := NewGenerator(logger, tempDir, lastfmClient)
 
 	// Create a drawing context to test font loading
 	dc := gg.NewContext(100, 100)

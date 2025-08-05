@@ -19,27 +19,28 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/fogleman/gg"
 	"github.com/syakter/go-chuu/internal/errors"
+	"github.com/syakter/go-chuu/internal/lastfm"
 	"github.com/syakter/go-chuu/internal/types"
-	"github.com/syakter/go-lastfm/lastfm"
+	lastfmapi "github.com/syakter/go-lastfm/lastfm"
 )
 
 // Generator handles chart generation
 type Generator struct {
-	logger     *slog.Logger
-	tempDir    string
-	httpClient *http.Client
-	lastfmAPI  *lastfm.Api
+	logger       *slog.Logger
+	tempDir      string
+	httpClient   *http.Client
+	lastfmClient *lastfm.Client
 }
 
 // NewGenerator creates a new chart generator
-func NewGenerator(logger *slog.Logger, tempDir string, lastfmAPI *lastfm.Api) *Generator {
+func NewGenerator(logger *slog.Logger, tempDir string, lastfmClient *lastfm.Client) *Generator {
 	return &Generator{
 		logger:  logger,
 		tempDir: tempDir,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		lastfmAPI: lastfmAPI,
+		lastfmClient: lastfmClient,
 	}
 }
 
@@ -96,14 +97,14 @@ func (g *Generator) fetchAlbumData(ctx context.Context, username, period string)
 
 	formattedPeriod := g.formatPeriodForAPI(period)
 
-	result, err := g.lastfmAPI.User.GetTopAlbums(lastfm.P{
+	result, err := g.lastfmClient.GetAPI().User.GetTopAlbums(map[string]interface{}{
 		"user":   username,
 		"period": formattedPeriod,
 		"limit":  "9", // We only need 9 albums for 3x3 grid
 	})
 	if err != nil {
 		// Check for common Last.fm API errors
-		if lastfmErr, ok := err.(*lastfm.LastfmError); ok {
+		if lastfmErr, ok := err.(*lastfmapi.LastfmError); ok {
 			switch lastfmErr.Code {
 			case 6: // User not found
 				return nil, fmt.Errorf("Last.fm user '%s' not found", username)
@@ -158,7 +159,7 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 	const maxPages = 10       // Limit to prevent infinite loops
 
 	for page <= maxPages {
-		result, err := g.lastfmAPI.User.GetRecentTracks(lastfm.P{
+		result, err := g.lastfmClient.GetAPI().User.GetRecentTracks(map[string]interface{}{
 			"user":  username,
 			"limit": strconv.Itoa(tracksPerPage),
 			"page":  strconv.Itoa(page),
@@ -166,7 +167,7 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 		})
 		if err != nil {
 			// Check for common Last.fm API errors
-			if lastfmErr, ok := err.(*lastfm.LastfmError); ok {
+			if lastfmErr, ok := err.(*lastfmapi.LastfmError); ok {
 				switch lastfmErr.Code {
 				case 6: // User not found
 					return nil, fmt.Errorf("Last.fm user '%s' not found", username)
