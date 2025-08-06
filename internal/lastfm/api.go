@@ -80,7 +80,12 @@ func (api *API) makeRequest(ctx context.Context, method string, params map[strin
 
 	// Check for API errors in the response
 	var errorResp APIError
-	if err := json.Unmarshal(body, &errorResp); err == nil && errorResp.Code != 0 {
+	if err := json.Unmarshal(body, &errorResp); err != nil {
+		// If we can't parse as JSON, it's likely an invalid response
+		return nil, fmt.Errorf("invalid JSON response: %v", err)
+	}
+	
+	if errorResp.Code != 0 {
 		return nil, &errorResp
 	}
 

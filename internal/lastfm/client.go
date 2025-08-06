@@ -105,7 +105,8 @@ func (c *Client) fetchArtistScrobbles(ctx context.Context, artistName string) ([
 			result, err := c.api.GetArtistInfo(ctx, map[string]interface{}{"artist": artistName, "username": user})
 			if err != nil {
 				c.logger.Warn("Failed to get artist info", "user", user, "artist", artistName, "error", err)
-				// Don't fail the entire request for one user
+				// Send the error to the channel for potential propagation
+				errorChan <- err
 				mu.Lock()
 				counts[user] = 0
 				mu.Unlock()
@@ -131,6 +132,19 @@ func (c *Client) fetchArtistScrobbles(ctx context.Context, artistName string) ([
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	// Check if we should propagate API errors
+	var apiErrors []error
+	for err := range errorChan {
+		if ctx.Err() == nil { // Don't collect context errors
+			apiErrors = append(apiErrors, err)
+		}
+	}
+
+	// If all users failed with API errors, propagate the first one
+	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		return nil, apiErrors[0]
 	}
 
 	// Convert to sorted slice
@@ -178,6 +192,7 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 	counts := make(map[string]int)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	errorChan := make(chan error, len(c.config.Users))
 
 	for _, user := range c.config.Users {
 		wg.Add(1)
@@ -189,12 +204,15 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 			case c.semaphore <- struct{}{}:
 				defer func() { <-c.semaphore }()
 			case <-ctx.Done():
+				errorChan <- ctx.Err()
 				return
 			}
 
 			result, err := c.api.GetAlbumInfo(ctx, map[string]interface{}{"artist": artistName, "album": albumName, "username": user})
 			if err != nil {
 				c.logger.Warn("Failed to get album info", "user", user, "artist", artistName, "album", albumName, "error", err)
+				// Send the error to the channel for potential propagation
+				errorChan <- err
 				mu.Lock()
 				counts[user] = 0
 				mu.Unlock()
@@ -215,9 +233,23 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 	}
 
 	wg.Wait()
+	close(errorChan)
 
 	if ctx.Err() != nil {
 		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	// Check if we should propagate API errors
+	var apiErrors []error
+	for err := range errorChan {
+		if ctx.Err() == nil { // Don't collect context errors
+			apiErrors = append(apiErrors, err)
+		}
+	}
+
+	// If all users failed with API errors, propagate the first one
+	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		return nil, apiErrors[0]
 	}
 
 	var userCounts []types.UserCount
@@ -264,6 +296,7 @@ func (c *Client) fetchTrackScrobbles(ctx context.Context, artistName, trackName 
 	counts := make(map[string]int)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	errorChan := make(chan error, len(c.config.Users))
 
 	for _, user := range c.config.Users {
 		wg.Add(1)
@@ -275,12 +308,15 @@ func (c *Client) fetchTrackScrobbles(ctx context.Context, artistName, trackName 
 			case c.semaphore <- struct{}{}:
 				defer func() { <-c.semaphore }()
 			case <-ctx.Done():
+				errorChan <- ctx.Err()
 				return
 			}
 
 			result, err := c.api.GetTrackInfo(ctx, map[string]interface{}{"artist": artistName, "track": trackName, "username": user})
 			if err != nil {
 				c.logger.Warn("Failed to get track info", "user", user, "artist", artistName, "track", trackName, "error", err)
+				// Send the error to the channel for potential propagation
+				errorChan <- err
 				mu.Lock()
 				counts[user] = 0
 				mu.Unlock()
@@ -301,9 +337,23 @@ func (c *Client) fetchTrackScrobbles(ctx context.Context, artistName, trackName 
 	}
 
 	wg.Wait()
+	close(errorChan)
 
 	if ctx.Err() != nil {
 		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	// Check if we should propagate API errors
+	var apiErrors []error
+	for err := range errorChan {
+		if ctx.Err() == nil { // Don't collect context errors
+			apiErrors = append(apiErrors, err)
+		}
+	}
+
+	// If all users failed with API errors, propagate the first one
+	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		return nil, apiErrors[0]
 	}
 
 	var userCounts []types.UserCount
@@ -566,6 +616,7 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 	counts := make(map[string]int)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	errorChan := make(chan error, len(c.config.Users))
 
 	for _, user := range c.config.Users {
 		wg.Add(1)
@@ -577,6 +628,7 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 			case c.semaphore <- struct{}{}:
 				defer func() { <-c.semaphore }()
 			case <-ctx.Done():
+				errorChan <- ctx.Err()
 				return
 			}
 
@@ -586,6 +638,8 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 			artistChart, err := c.api.GetWeeklyArtistChart(ctx, map[string]interface{}{"user": user, "from": fromTimestamp, "to": toTimestamp})
 			if err != nil {
 				c.logger.Warn("Failed to get weekly artist chart", "user", user, "error", err)
+				// Send the error to the channel for potential propagation
+				errorChan <- err
 				return
 			}
 
@@ -603,9 +657,23 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 	}
 
 	wg.Wait()
+	close(errorChan)
 
 	if ctx.Err() != nil {
 		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	// Check if we should propagate API errors
+	var apiErrors []error
+	for err := range errorChan {
+		if ctx.Err() == nil { // Don't collect context errors
+			apiErrors = append(apiErrors, err)
+		}
+	}
+
+	// If all users failed with API errors, propagate the first one
+	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		return nil, apiErrors[0]
 	}
 
 	var entries []types.LeaderboardEntry
