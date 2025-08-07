@@ -84,7 +84,7 @@ func (api *API) makeRequest(ctx context.Context, method string, params map[strin
 		// If we can't parse as JSON, it's likely an invalid response
 		return nil, fmt.Errorf("invalid JSON response: %v", err)
 	}
-	
+
 	if errorResp.Code != 0 {
 		return nil, &errorResp
 	}
@@ -106,10 +106,11 @@ type Artist struct {
 
 // Album represents an album
 type Album struct {
-	Name   string  `json:"name"`
-	Artist Artist  `json:"artist"`
-	URL    string  `json:"url"`
-	Images []Image `json:"image"`
+	Name      string  `json:"name"`
+	Artist    Artist  `json:"artist"`
+	URL       string  `json:"url"`
+	Images    []Image `json:"image"`
+	PlayCount string  `json:"playcount"`
 }
 
 // Track represents a track
@@ -119,6 +120,7 @@ type Track struct {
 	Album      Album   `json:"album"`
 	URL        string  `json:"url"`
 	Images     []Image `json:"image"`
+	PlayCount  string  `json:"playcount"`
 	NowPlaying string  `json:"@attr"`
 	Date       struct {
 		UTS  string `json:"uts"`

@@ -16,6 +16,18 @@ import (
 	"github.com/syakter/go-chuu/internal/types"
 )
 
+// albumAggregation holds aggregated album statistics
+type albumAggregation struct {
+	TotalPlaycount int
+	UserCount      int
+}
+
+// trackAggregation holds aggregated track statistics
+type trackAggregation struct {
+	TotalPlaycount int
+	UserCount      int
+}
+
 // APIInterface defines the interface for Last.fm API operations
 type APIInterface interface {
 	GetTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error)
@@ -142,9 +154,10 @@ func (c *Client) fetchArtistScrobbles(ctx context.Context, artistName string) ([
 		}
 	}
 
-	// If all users failed with API errors, propagate the first one
+	// If all users failed with API errors, log but don't propagate (resilient behavior)
 	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
-		return nil, apiErrors[0]
+		c.logger.Warn("All users failed for artist scrobbles", "artist", artistName, "errors", len(apiErrors))
+		// Return empty results instead of propagating error
 	}
 
 	// Convert to sorted slice
@@ -247,9 +260,10 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 		}
 	}
 
-	// If all users failed with API errors, propagate the first one
+	// If all users failed with API errors, log but don't propagate (resilient behavior)
 	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
-		return nil, apiErrors[0]
+		c.logger.Warn("All users failed for album scrobbles", "artist", artistName, "album", albumName, "errors", len(apiErrors))
+		// Return empty results instead of propagating error
 	}
 
 	var userCounts []types.UserCount
@@ -351,9 +365,10 @@ func (c *Client) fetchTrackScrobbles(ctx context.Context, artistName, trackName 
 		}
 	}
 
-	// If all users failed with API errors, propagate the first one
+	// If all users failed with API errors, log but don't propagate (resilient behavior)
 	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
-		return nil, apiErrors[0]
+		c.logger.Warn("All users failed for track scrobbles", "artist", artistName, "track", trackName, "errors", len(apiErrors))
+		// Return empty results instead of propagating error
 	}
 
 	var userCounts []types.UserCount
@@ -481,6 +496,46 @@ func (c *Client) fetchUserTopAlbums(ctx context.Context, username, period string
 	}
 
 	return albums, nil
+}
+
+// fetchUserTopAlbumsWithPlaycounts fetches user top albums with playcount data
+func (c *Client) fetchUserTopAlbumsWithPlaycounts(ctx context.Context, username, period string, limit int) ([]Album, error) {
+	period = c.normalizePeriod(period)
+
+	result, err := c.api.GetTopAlbums(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var albums []Album
+	for i, album := range result.TopAlbums.Albums {
+		if i >= limit {
+			break
+		}
+		albums = append(albums, album)
+	}
+
+	return albums, nil
+}
+
+// fetchUserTopTracksWithPlaycounts fetches user top tracks with playcount data
+func (c *Client) fetchUserTopTracksWithPlaycounts(ctx context.Context, username, period string, limit int) ([]Track, error) {
+	period = c.normalizePeriod(period)
+
+	result, err := c.api.GetTopTracks(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var tracks []Track
+	for i, track := range result.TopTracks.Tracks {
+		if i >= limit {
+			break
+		}
+		tracks = append(tracks, track)
+	}
+
+	return tracks, nil
 }
 
 // GetUserTopArtists gets top artists for a user
@@ -671,9 +726,10 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 		}
 	}
 
-	// If all users failed with API errors, propagate the first one
+	// If all users failed with API errors, log but don't propagate (resilient behavior)
 	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
-		return nil, apiErrors[0]
+		c.logger.Warn("All users failed for weekly leaderboard", "errors", len(apiErrors))
+		// Return empty results instead of propagating error
 	}
 
 	var entries []types.LeaderboardEntry
@@ -696,6 +752,304 @@ func (c *Client) fetchWeeklyLeaderboard(ctx context.Context) ([]types.Leaderboar
 	}
 
 	return entries, nil
+}
+
+// GetTopAlbumsAcrossUsers aggregates top albums across all users for a given period
+func (c *Client) GetTopAlbumsAcrossUsers(ctx context.Context, period string, limit int) ([]types.AlbumCount, error) {
+	c.logger.Debug("Getting top albums across all users", "period", period, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "top_albums_all",
+		Period: period,
+		Limit:  limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.AlbumCounts, error) {
+		albums, err := c.fetchTopAlbumsAcrossUsers(ctx, period, limit)
+		return types.AlbumCounts(albums), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError("failed to get top albums across users", err)
+	}
+
+	return []types.AlbumCount(result), nil
+}
+
+// fetchTopAlbumsAcrossUsers fetches and aggregates top albums from all users
+func (c *Client) fetchTopAlbumsAcrossUsers(ctx context.Context, period string, limit int) ([]types.AlbumCount, error) {
+	albumStats := make(map[string]*albumAggregation)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	errorChan := make(chan error, len(c.config.Users))
+
+	for _, user := range c.config.Users {
+		wg.Add(1)
+		go func(user string) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				return
+			}
+
+			albums, err := c.fetchUserTopAlbumsWithPlaycounts(ctx, user, period, 50)
+			if err != nil {
+				c.logger.Warn("Failed to get top albums for user", "user", user, "error", err)
+				errorChan <- err
+				return
+			}
+
+			mu.Lock()
+			for _, album := range albums {
+				albumName := fmt.Sprintf("%s - %s", album.Artist.Name, album.Name)
+				playcount := 0
+				if pc, err := strconv.Atoi(album.PlayCount); err == nil {
+					playcount = pc
+				}
+
+				if existing, ok := albumStats[albumName]; ok {
+					existing.TotalPlaycount += playcount
+					existing.UserCount++
+				} else {
+					albumStats[albumName] = &albumAggregation{
+						TotalPlaycount: playcount,
+						UserCount:      1,
+					}
+				}
+			}
+			mu.Unlock()
+		}(user)
+	}
+
+	wg.Wait()
+	close(errorChan)
+
+	// Check for errors
+	for err := range errorChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Convert map to sorted slice
+	var result []types.AlbumCount
+	for albumName, stats := range albumStats {
+		result = append(result, types.AlbumCount{
+			AlbumName: albumName,
+			Playcount: stats.TotalPlaycount,
+			UserCount: stats.UserCount,
+		})
+	}
+
+	// Sort by total playcount descending
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Playcount > result[j].Playcount
+	})
+
+	// Limit results
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+
+	return result, nil
+}
+
+// GetTopTracksAcrossUsers aggregates top tracks across all users for a given period
+func (c *Client) GetTopTracksAcrossUsers(ctx context.Context, period string, limit int) ([]types.TrackCount, error) {
+	c.logger.Debug("Getting top tracks across all users", "period", period, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "top_tracks_all",
+		Period: period,
+		Limit:  limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.TrackCounts, error) {
+		tracks, err := c.fetchTopTracksAcrossUsers(ctx, period, limit)
+		return types.TrackCounts(tracks), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError("failed to get top tracks across users", err)
+	}
+
+	return []types.TrackCount(result), nil
+}
+
+// fetchTopTracksAcrossUsers fetches and aggregates top tracks from all users
+func (c *Client) fetchTopTracksAcrossUsers(ctx context.Context, period string, limit int) ([]types.TrackCount, error) {
+	trackStats := make(map[string]*trackAggregation)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	errorChan := make(chan error, len(c.config.Users))
+
+	for _, user := range c.config.Users {
+		wg.Add(1)
+		go func(user string) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				return
+			}
+
+			tracks, err := c.fetchUserTopTracksWithPlaycounts(ctx, user, period, 50)
+			if err != nil {
+				c.logger.Warn("Failed to get top tracks for user", "user", user, "error", err)
+				errorChan <- err
+				return
+			}
+
+			mu.Lock()
+			for _, track := range tracks {
+				trackName := fmt.Sprintf("%s - %s", track.Artist.Name, track.Name)
+				playcount := 0
+				if pc, err := strconv.Atoi(track.PlayCount); err == nil {
+					playcount = pc
+				}
+
+				if existing, ok := trackStats[trackName]; ok {
+					existing.TotalPlaycount += playcount
+					existing.UserCount++
+				} else {
+					trackStats[trackName] = &trackAggregation{
+						TotalPlaycount: playcount,
+						UserCount:      1,
+					}
+				}
+			}
+			mu.Unlock()
+		}(user)
+	}
+
+	wg.Wait()
+	close(errorChan)
+
+	// Check for errors
+	for err := range errorChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Convert map to sorted slice
+	var result []types.TrackCount
+	for trackName, stats := range trackStats {
+		result = append(result, types.TrackCount{
+			TrackName: trackName,
+			Playcount: stats.TotalPlaycount,
+			UserCount: stats.UserCount,
+		})
+	}
+
+	// Sort by total playcount descending
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Playcount > result[j].Playcount
+	})
+
+	// Limit results
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+
+	return result, nil
+}
+
+// GetUserTopAlbumsByArtist gets top albums by a specific artist for a user
+func (c *Client) GetUserTopAlbumsByArtist(ctx context.Context, username, artistName string, limit int) ([]string, error) {
+	c.logger.Debug("Getting user top albums by artist", "user", username, "artist", artistName, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "user_albums_by_artist",
+		User:   username,
+		Artist: artistName,
+		Limit:  limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+		albums, err := c.fetchUserTopAlbumsByArtist(ctx, username, artistName, limit)
+		return types.StringSlice(albums), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get albums by %s for user %s", artistName, username), err)
+	}
+
+	return []string(result), nil
+}
+
+// fetchUserTopAlbumsByArtist fetches top albums by artist for a specific user
+func (c *Client) fetchUserTopAlbumsByArtist(ctx context.Context, username, artistName string, limit int) ([]string, error) {
+	// Get all top albums for the user and filter by artist
+	allAlbums, err := c.GetUserTopAlbums(ctx, username, "overall", 200) // Get more albums to filter
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredAlbums []string
+	artistLower := strings.ToLower(artistName)
+
+	for _, album := range allAlbums {
+		// Check if album contains the artist name (albums are typically formatted as "Album Name by Artist Name")
+		if strings.Contains(strings.ToLower(album), artistLower) {
+			filteredAlbums = append(filteredAlbums, album)
+			if limit > 0 && len(filteredAlbums) >= limit {
+				break
+			}
+		}
+	}
+
+	return filteredAlbums, nil
+}
+
+// GetUserTopTracksByArtist gets top tracks by a specific artist for a user
+func (c *Client) GetUserTopTracksByArtist(ctx context.Context, username, artistName string, limit int) ([]string, error) {
+	c.logger.Debug("Getting user top tracks by artist", "user", username, "artist", artistName, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "user_tracks_by_artist",
+		User:   username,
+		Artist: artistName,
+		Limit:  limit,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+		tracks, err := c.fetchUserTopTracksByArtist(ctx, username, artistName, limit)
+		return types.StringSlice(tracks), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get tracks by %s for user %s", artistName, username), err)
+	}
+
+	return []string(result), nil
+}
+
+// fetchUserTopTracksByArtist fetches top tracks by artist for a specific user
+func (c *Client) fetchUserTopTracksByArtist(ctx context.Context, username, artistName string, limit int) ([]string, error) {
+	// Get all top tracks for the user and filter by artist
+	allTracks, err := c.GetUserTopTracks(ctx, username, "overall", 200) // Get more tracks to filter
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredTracks []string
+	artistLower := strings.ToLower(artistName)
+
+	for _, track := range allTracks {
+		// Check if track contains the artist name (tracks are typically formatted as "Track Name by Artist Name")
+		if strings.Contains(strings.ToLower(track), artistLower) {
+			filteredTracks = append(filteredTracks, track)
+			if limit > 0 && len(filteredTracks) >= limit {
+				break
+			}
+		}
+	}
+
+	return filteredTracks, nil
 }
 
 // normalizePeriod converts user-friendly periods to Last.fm API periods
