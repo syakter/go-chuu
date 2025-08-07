@@ -552,36 +552,136 @@ func (h *Handler) handleRecentTracksCommand(ctx context.Context, cmd *types.Comm
 
 // handleTopAlbumsAllCommand processes top albums for all users commands
 func (h *Handler) handleTopAlbumsAllCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
-	// This would require aggregating data across all users - placeholder for now
+	period := cmd.Period
+	if period == "" {
+		period = "7d" // default to 7 days
+	}
+
+	albums, err := h.lastfmClient.GetTopAlbumsAcrossUsers(ctx, period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get top albums across users", "error", err, "period", period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(albums) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: "No albums found for the specified period! 🎵",
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(period)
+	content.WriteString(fmt.Sprintf("Top albums in Kagang%s:\n\n", periodText))
+
+	for i, album := range albums {
+		content.WriteString(fmt.Sprintf("%d. %s (%d scrobbles, %d users)\n", i+1, album.AlbumName, album.Playcount, album.UserCount))
+	}
+
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
-		Content: "Top albums for all users feature coming soon! 🎵",
+		Content: content.String(),
 	}
 }
 
 // handleTopTracksAllCommand processes top tracks for all users commands
 func (h *Handler) handleTopTracksAllCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
-	// This would require aggregating data across all users - placeholder for now
+	period := cmd.Period
+	if period == "" {
+		period = "7d" // default to 7 days
+	}
+
+	tracks, err := h.lastfmClient.GetTopTracksAcrossUsers(ctx, period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get top tracks across users", "error", err, "period", period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(tracks) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: "No tracks found for the specified period! 🎵",
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(period)
+	content.WriteString(fmt.Sprintf("Top tracks in Kagang%s:\n\n", periodText))
+
+	for i, track := range tracks {
+		content.WriteString(fmt.Sprintf("%d. %s (%d scrobbles, %d users)\n", i+1, track.TrackName, track.Playcount, track.UserCount))
+	}
+
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
-		Content: "Top tracks for all users feature coming soon! 🎵",
+		Content: content.String(),
 	}
 }
 
 // handleDiscoCommand processes disco commands
 func (h *Handler) handleDiscoCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
-	// This would show top albums by a specific artist for a user - placeholder for now
+	albums, err := h.lastfmClient.GetUserTopAlbumsByArtist(ctx, cmd.User, cmd.Artist, 10)
+	if err != nil {
+		h.logger.Error("Failed to get user albums by artist", "error", err, "user", cmd.User, "artist", cmd.Artist)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(albums) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("No albums by %s found for %s! 🎵", cmd.Artist, cmd.User),
+		}
+	}
+
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("%s's top albums by %s:\n\n", cmd.User, cmd.Artist))
+
+	for i, album := range albums {
+		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, album))
+	}
+
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
-		Content: fmt.Sprintf("Discovery feature for %s by %s coming soon! 🎵", cmd.Artist, cmd.User),
+		Content: content.String(),
 	}
 }
 
 // handleDiscoveryTrackCommand processes discovery track commands
 func (h *Handler) handleDiscoveryTrackCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
-	// This would show top tracks by a specific artist for a user - placeholder for now
+	tracks, err := h.lastfmClient.GetUserTopTracksByArtist(ctx, cmd.User, cmd.Artist, 10)
+	if err != nil {
+		h.logger.Error("Failed to get user tracks by artist", "error", err, "user", cmd.User, "artist", cmd.Artist)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(tracks) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("No tracks by %s found for %s! 🎵", cmd.Artist, cmd.User),
+		}
+	}
+
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("%s's top tracks by %s:\n\n", cmd.User, cmd.Artist))
+
+	for i, track := range tracks {
+		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, track))
+	}
+
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
-		Content: fmt.Sprintf("Track discovery for %s by %s coming soon! 🎵", cmd.Artist, cmd.User),
+		Content: content.String(),
 	}
 }

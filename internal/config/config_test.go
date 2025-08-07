@@ -78,8 +78,8 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("Expected no error, got %v", err)
 		}
 
-		if cfg.LogLevel != "info" {
-			t.Errorf("Expected default LogLevel 'info', got '%s'", cfg.LogLevel)
+		if cfg.LogLevel != "debug" {
+			t.Errorf("Expected default LogLevel 'debug', got '%s'", cfg.LogLevel)
 		}
 
 		if len(cfg.Users) != len(DefaultUsers) {

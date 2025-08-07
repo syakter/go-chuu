@@ -13,12 +13,14 @@ type UserCount struct {
 
 type AlbumCount struct {
 	AlbumName string `json:"album_name"`
-	Playcount int    `json:"playcount"`
+	Playcount int    `json:"playcount"`  // Total scrobbles across all users
+	UserCount int    `json:"user_count"` // Number of users who have this album in their top list
 }
 
 type TrackCount struct {
 	TrackName string `json:"track_name"`
-	Playcount int    `json:"playcount"`
+	Playcount int    `json:"playcount"`  // Total scrobbles across all users
+	UserCount int    `json:"user_count"` // Number of users who have this track in their top list
 }
 
 // Chart types
@@ -145,4 +147,16 @@ type LeaderboardEntries []LeaderboardEntry
 
 func (le LeaderboardEntries) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]LeaderboardEntry(le))
+}
+
+type AlbumCounts []AlbumCount
+
+func (ac AlbumCounts) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]AlbumCount(ac))
+}
+
+type TrackCounts []TrackCount
+
+func (tc TrackCounts) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]TrackCount(tc))
 }
