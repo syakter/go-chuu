@@ -113,6 +113,47 @@ type Album struct {
 	PlayCount string  `json:"playcount"`
 }
 
+// UnmarshalJSON provides custom JSON unmarshaling for Album to handle both string and object artist fields
+func (a *Album) UnmarshalJSON(data []byte) error {
+	type Alias Album
+	aux := &struct {
+		Artist interface{} `json:"artist"`
+		*Alias
+	}{
+		Alias: (*Alias)(a),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// Handle artist field - can be either string or Artist object
+	switch v := aux.Artist.(type) {
+	case string:
+		a.Artist = Artist{Name: v}
+	case map[string]interface{}:
+		artistBytes, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(artistBytes, &a.Artist); err != nil {
+			return err
+		}
+	default:
+		// If it's neither string nor object, try to unmarshal as Artist directly
+		artistBytes, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(artistBytes, &a.Artist); err != nil {
+			// If all else fails, treat it as empty string
+			a.Artist = Artist{Name: ""}
+		}
+	}
+
+	return nil
+}
+
 // Track represents a track
 type Track struct {
 	Name       string  `json:"name"`
