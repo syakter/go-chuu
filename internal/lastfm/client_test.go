@@ -89,9 +89,9 @@ func (m *mockAPI) GetRecentTracks(ctx context.Context, params map[string]interfa
 		}{
 			Tracks: []Track{
 				{
-					Name:       "Mock Track",
-					Artist:     Artist{Name: "Mock Artist"},
-					NowPlaying: nowPlaying,
+					Name:    "Mock Track",
+					Artist:  Artist{Name: "Mock Artist"},
+					Attribs: TrackAttribs{NowPlaying: nowPlaying},
 				},
 			},
 		},

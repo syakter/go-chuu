@@ -179,7 +179,8 @@ func GetOrSet[T CacheableData](cache Cache, key types.CacheKey, ttl time.Duratio
 		if err := json.Unmarshal(data, &result); err == nil {
 			return result, nil
 		}
-		// If unmarshal fails, continue to fetch fresh data
+		// If unmarshal fails, delete the corrupted cache entry and continue to fetch fresh data
+		cache.Delete(key)
 	}
 
 	// Fetch fresh data

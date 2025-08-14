@@ -38,7 +38,7 @@ var (
 		Images: []Image{
 			{Size: "large", URL: "http://test.com/track_large.jpg"},
 		},
-		NowPlaying: "false",
+		Attribs: TrackAttribs{NowPlaying: "false"},
 		Date: struct {
 			UTS  string `json:"uts"`
 			Text string `json:"#text"`
@@ -49,11 +49,11 @@ var (
 	}
 
 	TestNowPlayingTrack = Track{
-		Name:       "Now Playing Track",
-		Artist:     TestArtist,
-		Album:      TestAlbum,
-		URL:        "http://test.com/nowplaying",
-		NowPlaying: "true",
+		Name:    "Now Playing Track",
+		Artist:  TestArtist,
+		Album:   TestAlbum,
+		URL:     "http://test.com/nowplaying",
+		Attribs: TrackAttribs{NowPlaying: "true"},
 	}
 )
 
@@ -364,10 +364,10 @@ func GenerateTestTracks(count int) []Track {
 	tracks := make([]Track, count)
 	for i := 0; i < count; i++ {
 		tracks[i] = Track{
-			Name:       fmt.Sprintf("Track %d", i+1),
-			Artist:     Artist{Name: fmt.Sprintf("Artist %d", i+1)},
-			URL:        fmt.Sprintf("http://test.com/track%d", i+1),
-			NowPlaying: "false",
+			Name:    fmt.Sprintf("Track %d", i+1),
+			Artist:  Artist{Name: fmt.Sprintf("Artist %d", i+1)},
+			URL:     fmt.Sprintf("http://test.com/track%d", i+1),
+			Attribs: TrackAttribs{NowPlaying: "false"},
 		}
 	}
 	return tracks

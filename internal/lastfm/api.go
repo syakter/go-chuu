@@ -79,13 +79,16 @@ func (api *API) makeRequest(ctx context.Context, method string, params map[strin
 	}
 
 	// Check for API errors in the response
-	var errorResp APIError
-	if err := json.Unmarshal(body, &errorResp); err != nil {
+	// First, try to parse as a generic JSON to see if it's valid JSON
+	var jsonCheck interface{}
+	if err := json.Unmarshal(body, &jsonCheck); err != nil {
 		// If we can't parse as JSON, it's likely an invalid response
 		return nil, fmt.Errorf("invalid JSON response: %v", err)
 	}
 
-	if errorResp.Code != 0 {
+	// Now check if it's an error response by looking for error field
+	var errorResp APIError
+	if err := json.Unmarshal(body, &errorResp); err == nil && errorResp.Code != 0 {
 		return nil, &errorResp
 	}
 
@@ -124,7 +127,7 @@ func (a *Album) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(data, aux); err != nil {
-		return err
+		return fmt.Errorf("failed to unmarshal album: %w", err)
 	}
 
 	// Handle artist field - can be either string or Artist object
@@ -132,21 +135,26 @@ func (a *Album) UnmarshalJSON(data []byte) error {
 	case string:
 		a.Artist = Artist{Name: v}
 	case map[string]interface{}:
-		artistBytes, err := json.Marshal(v)
-		if err != nil {
-			return err
+		// Extract name from artist object map
+		if name, ok := v["name"]; ok {
+			if nameStr, ok := name.(string); ok {
+				a.Artist.Name = nameStr
+			}
 		}
-		if err := json.Unmarshal(artistBytes, &a.Artist); err != nil {
-			return err
+		// Extract URL if available
+		if url, ok := v["url"]; ok {
+			if urlStr, ok := url.(string); ok {
+				a.Artist.URL = urlStr
+			}
 		}
+	case nil:
+		// Artist field is null/missing, set to empty
+		a.Artist = Artist{Name: ""}
 	default:
-		// If it's neither string nor object, try to unmarshal as Artist directly
-		artistBytes, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(artistBytes, &a.Artist); err != nil {
-			// If all else fails, treat it as empty string
+		// Try to convert to string as fallback
+		if str := fmt.Sprintf("%v", v); str != "<nil>" {
+			a.Artist = Artist{Name: str}
+		} else {
 			a.Artist = Artist{Name: ""}
 		}
 	}
@@ -154,19 +162,29 @@ func (a *Album) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// TrackAttribs represents track attributes including nowplaying status
+type TrackAttribs struct {
+	NowPlaying string `json:"nowplaying"`
+}
+
 // Track represents a track
 type Track struct {
-	Name       string  `json:"name"`
-	Artist     Artist  `json:"artist"`
-	Album      Album   `json:"album"`
-	URL        string  `json:"url"`
-	Images     []Image `json:"image"`
-	PlayCount  string  `json:"playcount"`
-	NowPlaying string  `json:"@attr"`
-	Date       struct {
+	Name      string       `json:"name"`
+	Artist    Artist       `json:"artist"`
+	Album     Album        `json:"album"`
+	URL       string       `json:"url"`
+	Images    []Image      `json:"image"`
+	PlayCount string       `json:"playcount"`
+	Attribs   TrackAttribs `json:"@attr"`
+	Date      struct {
 		UTS  string `json:"uts"`
 		Text string `json:"#text"`
 	} `json:"date"`
+}
+
+// IsNowPlaying returns true if the track is currently playing
+func (t *Track) IsNowPlaying() bool {
+	return t.Attribs.NowPlaying == "true"
 }
 
 // AlbumInfo represents detailed album information

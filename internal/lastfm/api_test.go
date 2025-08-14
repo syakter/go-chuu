@@ -315,10 +315,10 @@ func TestAPI_GetRecentTracks(t *testing.T) {
 		}{
 			Tracks: []Track{
 				{
-					Name:       "Test Track",
-					Artist:     Artist{Name: "Test Artist"},
-					URL:        "http://test.com",
-					NowPlaying: "true",
+					Name:    "Test Track",
+					Artist:  Artist{Name: "Test Artist"},
+					URL:     "http://test.com",
+					Attribs: TrackAttribs{NowPlaying: "true"},
 				},
 			},
 		},
@@ -354,8 +354,8 @@ func TestAPI_GetRecentTracks(t *testing.T) {
 		t.Errorf("Expected track name 'Test Track', got %s", track.Name)
 	}
 
-	if track.NowPlaying != "true" {
-		t.Errorf("Expected now playing 'true', got %s", track.NowPlaying)
+	if !track.IsNowPlaying() {
+		t.Errorf("Expected track to be now playing")
 	}
 }
 
@@ -557,5 +557,216 @@ func TestAPIError_Error(t *testing.T) {
 	expected := "Last.fm API error 6: User not found"
 	if apiError.Error() != expected {
 		t.Errorf("Expected error message %q, got %q", expected, apiError.Error())
+	}
+}
+
+func TestTrack_JsonUnmarshal_RealWorldExample(t *testing.T) {
+	// Test with real-world JSON examples from Last.fm API
+	tests := []struct {
+		name               string
+		jsonData           string
+		expectedNowPlaying bool
+	}{
+		{
+			name: "now playing track",
+			jsonData: `{
+				"name": "Test Track",
+				"artist": {"name": "Test Artist"},
+				"@attr": {"nowplaying": "true"}
+			}`,
+			expectedNowPlaying: true,
+		},
+		{
+			name: "regular track with date",
+			jsonData: `{
+				"name": "Regular Track",
+				"artist": {"name": "Regular Artist"},
+				"date": {"uts": "1234567890", "#text": "01 Jan 2009"}
+			}`,
+			expectedNowPlaying: false,
+		},
+		{
+			name: "track with empty attr",
+			jsonData: `{
+				"name": "Empty Attr Track",
+				"artist": {"name": "Empty Artist"},
+				"@attr": {}
+			}`,
+			expectedNowPlaying: false,
+		},
+		{
+			name: "track without attr field",
+			jsonData: `{
+				"name": "No Attr Track",
+				"artist": {"name": "No Attr Artist"}
+			}`,
+			expectedNowPlaying: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var track Track
+			err := json.Unmarshal([]byte(tt.jsonData), &track)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal JSON: %v", err)
+			}
+
+			if track.IsNowPlaying() != tt.expectedNowPlaying {
+				t.Errorf("Expected IsNowPlaying() to be %v, got %v", tt.expectedNowPlaying, track.IsNowPlaying())
+			}
+		})
+	}
+}
+
+func TestAlbum_UnmarshalJSON_RobustHandling(t *testing.T) {
+	// Test the improved Album UnmarshalJSON method
+	tests := []struct {
+		name           string
+		jsonData       string
+		expectedName   string
+		expectedArtist string
+		expectError    bool
+	}{
+		{
+			name:           "artist as object",
+			jsonData:       `{"name": "Test Album", "artist": {"name": "Test Artist", "url": "http://test.com"}}`,
+			expectedName:   "Test Album",
+			expectedArtist: "Test Artist",
+			expectError:    false,
+		},
+		{
+			name:           "artist as string",
+			jsonData:       `{"name": "Test Album", "artist": "String Artist"}`,
+			expectedName:   "Test Album",
+			expectedArtist: "String Artist",
+			expectError:    false,
+		},
+		{
+			name:           "artist as null",
+			jsonData:       `{"name": "Test Album", "artist": null}`,
+			expectedName:   "Test Album",
+			expectedArtist: "",
+			expectError:    false,
+		},
+		{
+			name:           "missing artist field",
+			jsonData:       `{"name": "Test Album"}`,
+			expectedName:   "Test Album",
+			expectedArtist: "",
+			expectError:    false,
+		},
+		{
+			name:           "artist as number (edge case)",
+			jsonData:       `{"name": "Test Album", "artist": 123}`,
+			expectedName:   "Test Album",
+			expectedArtist: "123",
+			expectError:    false,
+		},
+		{
+			name:        "invalid json",
+			jsonData:    `{"name": "Test Album", "artist": }`,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var album Album
+			err := json.Unmarshal([]byte(tt.jsonData), &album)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if album.Name != tt.expectedName {
+				t.Errorf("Expected name %q, got %q", tt.expectedName, album.Name)
+			}
+
+			if album.Artist.Name != tt.expectedArtist {
+				t.Errorf("Expected artist name %q, got %q", tt.expectedArtist, album.Artist.Name)
+			}
+		})
+	}
+}
+
+func TestAPI_makeRequest_ImprovedErrorHandling(t *testing.T) {
+	// Test the improved makeRequest method error handling
+	tests := []struct {
+		name          string
+		response      string
+		statusCode    int
+		expectedError bool
+		errorContains string
+	}{
+		{
+			name:          "valid response without error field",
+			response:      `{"topalbums": {"album": []}}`,
+			statusCode:    200,
+			expectedError: false,
+		},
+		{
+			name:          "api error response",
+			response:      `{"error": 6, "message": "User not found"}`,
+			statusCode:    200,
+			expectedError: true,
+			errorContains: "Last.fm API error 6: User not found",
+		},
+		{
+			name:          "invalid json response",
+			response:      `{invalid json`,
+			statusCode:    200,
+			expectedError: true,
+			errorContains: "invalid JSON response",
+		},
+		{
+			name:          "empty response",
+			response:      ``,
+			statusCode:    200,
+			expectedError: true,
+			errorContains: "invalid JSON response",
+		},
+		{
+			name:          "response with error field set to 0 (no error)",
+			response:      `{"error": 0, "topalbums": {"album": []}}`,
+			statusCode:    200,
+			expectedError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			api := NewAPI("test-key", "test-secret")
+			api.baseURL = server.URL + "/"
+
+			ctx := context.Background()
+			_, err := api.makeRequest(ctx, "test.method", map[string]interface{}{})
+
+			if tt.expectedError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error to contain %q, got %q", tt.errorContains, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
 	}
 }

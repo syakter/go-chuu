@@ -193,7 +193,7 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 			}
 
 			// Skip now playing tracks (they don't have timestamps)
-			if track.NowPlaying == "true" {
+			if track.IsNowPlaying() {
 				continue
 			}
 

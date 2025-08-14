@@ -415,7 +415,7 @@ func (c *Client) GetNowPlaying(ctx context.Context) (map[string]string, error) {
 
 			if len(result.RecentTracks.Tracks) > 0 {
 				track := result.RecentTracks.Tracks[0]
-				if track.NowPlaying == "true" {
+				if track.IsNowPlaying() {
 					trackInfo := fmt.Sprintf("%s - %s", track.Artist.Name, track.Name)
 					mu.Lock()
 					nowPlaying[user] = trackInfo
@@ -614,7 +614,7 @@ func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, lim
 			break
 		}
 		// Skip now playing tracks in recent tracks list
-		if track.NowPlaying == "true" {
+		if track.IsNowPlaying() {
 			continue
 		}
 		tracks = append(tracks, fmt.Sprintf("%s - %s", track.Artist.Name, track.Name))
