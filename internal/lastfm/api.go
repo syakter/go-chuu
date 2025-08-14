@@ -182,6 +182,52 @@ type Track struct {
 	} `json:"date"`
 }
 
+// UnmarshalJSON provides custom JSON unmarshaling for Track to handle both string and object artist fields
+func (t *Track) UnmarshalJSON(data []byte) error {
+	type Alias Track
+	aux := &struct {
+		Artist interface{} `json:"artist"`
+		*Alias
+	}{
+		Alias: (*Alias)(t),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return fmt.Errorf("failed to unmarshal track: %w", err)
+	}
+
+	// Handle artist field - can be either string or Artist object
+	switch v := aux.Artist.(type) {
+	case string:
+		t.Artist = Artist{Name: v}
+	case map[string]interface{}:
+		// Extract name from artist object map
+		if name, ok := v["name"]; ok {
+			if nameStr, ok := name.(string); ok {
+				t.Artist.Name = nameStr
+			}
+		}
+		// Extract URL if available
+		if url, ok := v["url"]; ok {
+			if urlStr, ok := url.(string); ok {
+				t.Artist.URL = urlStr
+			}
+		}
+	case nil:
+		// Artist field is null/missing, set to empty
+		t.Artist = Artist{Name: ""}
+	default:
+		// Try to convert to string as fallback
+		if str := fmt.Sprintf("%v", v); str != "<nil>" {
+			t.Artist = Artist{Name: str}
+		} else {
+			t.Artist = Artist{Name: ""}
+		}
+	}
+
+	return nil
+}
+
 // IsNowPlaying returns true if the track is currently playing
 func (t *Track) IsNowPlaying() bool {
 	return t.Attribs.NowPlaying == "true"

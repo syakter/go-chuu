@@ -770,3 +770,83 @@ func TestAPI_makeRequest_ImprovedErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestTrack_UnmarshalJSON_ArtistHandling(t *testing.T) {
+	// Test the Track UnmarshalJSON method with different artist field formats
+	tests := []struct {
+		name               string
+		jsonData           string
+		expectedName       string
+		expectedArtist     string
+		expectedNowPlaying bool
+		expectError        bool
+	}{
+		{
+			name:               "artist as object",
+			jsonData:           `{"name": "Test Track", "artist": {"name": "Test Artist", "url": "http://test.com"}, "@attr": {"nowplaying": "true"}}`,
+			expectedName:       "Test Track",
+			expectedArtist:     "Test Artist",
+			expectedNowPlaying: true,
+			expectError:        false,
+		},
+		{
+			name:               "artist as string",
+			jsonData:           `{"name": "Test Track 2", "artist": "String Artist", "@attr": {"nowplaying": "true"}}`,
+			expectedName:       "Test Track 2",
+			expectedArtist:     "String Artist",
+			expectedNowPlaying: true,
+			expectError:        false,
+		},
+		{
+			name:               "artist as null",
+			jsonData:           `{"name": "Test Track 3", "artist": null}`,
+			expectedName:       "Test Track 3",
+			expectedArtist:     "",
+			expectedNowPlaying: false,
+			expectError:        false,
+		},
+		{
+			name:               "missing artist field",
+			jsonData:           `{"name": "Test Track 4"}`,
+			expectedName:       "Test Track 4",
+			expectedArtist:     "",
+			expectedNowPlaying: false,
+			expectError:        false,
+		},
+		{
+			name:        "invalid json",
+			jsonData:    `{"name": "Test Track", "artist": }`,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var track Track
+			err := json.Unmarshal([]byte(tt.jsonData), &track)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if track.Name != tt.expectedName {
+				t.Errorf("Expected name %q, got %q", tt.expectedName, track.Name)
+			}
+
+			if track.Artist.Name != tt.expectedArtist {
+				t.Errorf("Expected artist name %q, got %q", tt.expectedArtist, track.Artist.Name)
+			}
+
+			if track.IsNowPlaying() != tt.expectedNowPlaying {
+				t.Errorf("Expected IsNowPlaying() to be %v, got %v", tt.expectedNowPlaying, track.IsNowPlaying())
+			}
+		})
+	}
+}
