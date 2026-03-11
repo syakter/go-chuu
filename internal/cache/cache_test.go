@@ -197,7 +197,7 @@ func TestCacheKey_String(t *testing.T) {
 		Track:  "Paranoid Android",
 	}
 
-	expected := "test:user1:7d:Radiohead:OK Computer:Paranoid Android"
+	expected := "test:user1:7d:Radiohead:OK Computer:Paranoid Android:0"
 	result := key.String()
 
 	if result != expected {

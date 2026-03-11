@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
@@ -121,7 +122,7 @@ type CacheKey struct {
 }
 
 func (c CacheKey) String() string {
-	return c.Type + ":" + c.User + ":" + c.Period + ":" + c.Artist + ":" + c.Album + ":" + c.Track
+	return c.Type + ":" + c.User + ":" + c.Period + ":" + c.Artist + ":" + c.Album + ":" + c.Track + ":" + strconv.Itoa(c.Limit)
 }
 
 type CacheEntry struct {

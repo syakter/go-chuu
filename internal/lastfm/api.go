@@ -180,13 +180,16 @@ type Track struct {
 	} `json:"date"`
 }
 
-// UnmarshalJSON provides custom JSON unmarshaling for Track to handle both string and object @attr fields,
-// and both string and number playcount fields.
+// UnmarshalJSON provides custom JSON unmarshaling for Track to handle:
+// - @attr being a string or object like {"nowplaying": "true"}
+// - playcount being a string or number
+// - artist being an object with "name" (toptracks) or "#text" (recenttracks)
 func (t *Track) UnmarshalJSON(data []byte) error {
 	type Alias Track
 	aux := &struct {
 		NowPlaying interface{} `json:"@attr"`
 		PlayCount  interface{} `json:"playcount"`
+		Artist     interface{} `json:"artist"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -212,6 +215,18 @@ func (t *Track) UnmarshalJSON(data []byte) error {
 		t.PlayCount = v
 	case float64:
 		t.PlayCount = strconv.Itoa(int(v))
+	}
+
+	// Handle artist field - toptracks returns {"name": "..."}, recenttracks returns {"#text": "..."}
+	switch v := aux.Artist.(type) {
+	case string:
+		t.Artist = Artist{Name: v}
+	case map[string]interface{}:
+		if name, ok := v["name"].(string); ok && name != "" {
+			t.Artist = Artist{Name: name}
+		} else if text, ok := v["#text"].(string); ok {
+			t.Artist = Artist{Name: text}
+		}
 	}
 
 	return nil
