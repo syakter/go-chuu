@@ -224,7 +224,7 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 
 // handleChartCommand processes chart generation commands
 func (h *Handler) handleChartCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
-	fileUpload, err := h.chartGen.GenerateAlbumChart(ctx, cmd.User, cmd.Period)
+	fileUpload, err := h.chartGen.GenerateAlbumChart(ctx, cmd.User, cmd.Period, cmd.ChartSize)
 	if err != nil {
 		h.logger.Error("Failed to generate chart", "error", err, "user", cmd.User, "period", cmd.Period)
 		return &types.BotResponse{
@@ -465,7 +465,9 @@ func (h *Handler) sendResponse(ctx context.Context, channel string, response *ty
 				Title:    response.File.Title,
 			}
 
-			if _, err := h.api.UploadFileV2Context(ctx, params); err != nil {
+			uploadCtx, uploadCancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer uploadCancel()
+			if _, err := h.api.UploadFileV2Context(uploadCtx, params); err != nil {
 				h.logger.Error("Failed to upload file", "error", err)
 			}
 		}

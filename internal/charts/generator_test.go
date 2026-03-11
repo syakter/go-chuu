@@ -62,7 +62,7 @@ func TestGenerator_CreateAlbumChart(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	chartImage, err := generator.createAlbumChart(ctx, mockAlbums)
+	chartImage, err := generator.createAlbumChart(ctx, mockAlbums, 3)
 	if err != nil {
 		t.Fatalf("Failed to create album chart: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestGenerator_FetchAlbumData_24h(t *testing.T) {
 
 	// This will fail because we don't have real API keys, but it should
 	// try the 24h code path instead of the regular top albums path
-	_, err := generator.fetchAlbumData(ctx, "testuser", "24h")
+	_, err := generator.fetchAlbumData(ctx, "testuser", "24h", 3)
 
 	// We expect an error since we don't have valid API credentials,
 	// but the error should come from the API call, not from trying
@@ -311,7 +311,7 @@ func TestGenerator_CreateAlbumChartWithText(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	chartImage, err := generator.createAlbumChart(ctx, mockAlbums)
+	chartImage, err := generator.createAlbumChart(ctx, mockAlbums, 3)
 	if err != nil {
 		t.Fatalf("Failed to create album chart with text: %v", err)
 	}

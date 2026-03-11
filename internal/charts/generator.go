@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -43,12 +44,15 @@ func NewGenerator(logger *slog.Logger, tempDir string, lastfmClient *lastfm.Clie
 	}
 }
 
-// GenerateAlbumChart generates a 3x3 album chart
-func (g *Generator) GenerateAlbumChart(ctx context.Context, username, period string) (*types.FileUpload, error) {
-	g.logger.Debug("Generating album chart", "username", username, "period", period)
+// GenerateAlbumChart generates an NxN album chart (size 2-10, default 3)
+func (g *Generator) GenerateAlbumChart(ctx context.Context, username, period string, size int) (*types.FileUpload, error) {
+	if size < 2 || size > 10 {
+		size = 3
+	}
+	g.logger.Debug("Generating album chart", "username", username, "period", period, "size", size)
 
 	// Get album data from external API
-	albums, err := g.fetchAlbumData(ctx, username, period)
+	albums, err := g.fetchAlbumData(ctx, username, period, size)
 	if err != nil {
 		return nil, errors.NewAPIError("failed to fetch album data", err)
 	}
@@ -58,7 +62,7 @@ func (g *Generator) GenerateAlbumChart(ctx context.Context, username, period str
 	}
 
 	// Create the chart image
-	chartImage, err := g.createAlbumChart(ctx, albums)
+	chartImage, err := g.createAlbumChart(ctx, albums, size)
 	if err != nil {
 		return nil, errors.NewInternalError("failed to create chart image", err)
 	}
@@ -83,15 +87,15 @@ func (g *Generator) GenerateAlbumChart(ctx context.Context, username, period str
 	return &types.FileUpload{
 		Filename: filename,
 		Path:     filePath,
-		Title:    fmt.Sprintf("Album chart for %s (%s)", username, period),
+		Title:    fmt.Sprintf("%dx%d album chart for %s (%s)", size, size, username, period),
 	}, nil
 }
 
 // fetchAlbumData fetches album data from the Last.fm API
-func (g *Generator) fetchAlbumData(ctx context.Context, username, period string) ([]types.Album, error) {
+func (g *Generator) fetchAlbumData(ctx context.Context, username, period string, size int) ([]types.Album, error) {
 	// Handle 24h period differently - use recent tracks instead of top albums
 	if period == "24h" {
-		return g.fetchAlbumsFromRecentTracks(ctx, username)
+		return g.fetchAlbumsFromRecentTracks(ctx, username, size)
 	}
 
 	formattedPeriod := g.formatPeriodForAPI(period)
@@ -99,7 +103,7 @@ func (g *Generator) fetchAlbumData(ctx context.Context, username, period string)
 	result, err := g.lastfmClient.GetAPI().GetTopAlbums(ctx, map[string]interface{}{
 		"user":   username,
 		"period": formattedPeriod,
-		"limit":  "9", // We only need 9 albums for 3x3 grid
+		"limit":  strconv.Itoa(size * size),
 	})
 	if err != nil {
 		// Check for common Last.fm API errors
@@ -144,7 +148,7 @@ func (g *Generator) fetchAlbumData(ctx context.Context, username, period string)
 }
 
 // fetchAlbumsFromRecentTracks fetches albums from recent tracks in the past 24 hours
-func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username string) ([]types.Album, error) {
+func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username string, size int) ([]types.Album, error) {
 	g.logger.Debug("Fetching albums from recent tracks for 24h period", "username", username)
 
 	// Calculate 24 hours ago timestamp
@@ -261,9 +265,9 @@ func (g *Generator) fetchAlbumsFromRecentTracks(ctx context.Context, username st
 		return albumList[i].playCount > albumList[j].playCount
 	})
 
-	// Take top 9 albums for 3x3 grid
+	// Take top N albums for NxN grid
 	var albums []types.Album
-	limit := 9
+	limit := size * size
 	if len(albumList) < limit {
 		limit = len(albumList)
 	}
@@ -282,45 +286,57 @@ type albumInfo struct {
 	playCount int
 }
 
-// createAlbumChart creates a 3x3 chart image from album data
-func (g *Generator) createAlbumChart(ctx context.Context, albums []types.Album) (image.Image, error) {
-	const (
-		width  = 900
-		height = 900
-		rows   = 3
-		cols   = 3
-	)
+// createAlbumChart creates an NxN chart image from album data
+func (g *Generator) createAlbumChart(ctx context.Context, albums []types.Album, size int) (image.Image, error) {
+	const cellSize = 300
+	width := cellSize * size
+	height := cellSize * size
+
+	albumWidth := width / size
+	albumHeight := height / size
+
+	maxAlbums := size * size
+	if len(albums) < maxAlbums {
+		maxAlbums = len(albums)
+	}
+
+	// Download all images concurrently, each with its own timeout
+	type result struct {
+		img image.Image
+		err error
+	}
+	results := make([]result, maxAlbums)
+	var wg sync.WaitGroup
+	for i := 0; i < maxAlbums; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			imgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			img, err := g.downloadAlbumArt(imgCtx, albums[i].Image)
+			results[i] = result{img, err}
+		}(i)
+	}
+	wg.Wait()
 
 	dc := gg.NewContext(width, height)
 	dc.SetRGB(0, 0, 0) // Black background
 	dc.Clear()
 
-	albumWidth := width / cols
-	albumHeight := height / rows
-
-	// Limit to 9 albums for 3x3 grid
-	maxAlbums := 9
-	if len(albums) < maxAlbums {
-		maxAlbums = len(albums)
-	}
-
 	for i := 0; i < maxAlbums; i++ {
 		album := albums[i]
-		x := float64(i%cols) * (float64(width) / float64(cols))
-		y := float64(i/cols) * (float64(height) / float64(rows))
+		x := float64(i%size) * float64(albumWidth)
+		y := float64(i/size) * float64(albumHeight)
 
-		// Download and process album art
-		img, err := g.downloadAlbumArt(ctx, album.Image)
-		if err != nil {
-			g.logger.Warn("Failed to download album art", "album", album.Name, "artist", album.Artist, "error", err)
+		if results[i].err != nil {
+			g.logger.Warn("Failed to download album art", "album", album.Name, "artist", album.Artist, "error", results[i].err)
 			// Draw placeholder rectangle
 			dc.SetRGB(0.3, 0.3, 0.3)
 			dc.DrawRectangle(x, y, float64(albumWidth), float64(albumHeight))
 			dc.Fill()
 		} else {
 			// Resize to fit grid cell
-			resizedImg := imaging.Resize(img, albumWidth, albumHeight, imaging.Lanczos)
-			// Draw album art
+			resizedImg := imaging.Resize(results[i].img, albumWidth, albumHeight, imaging.Lanczos)
 			dc.DrawImage(resizedImg, int(x), int(y))
 		}
 

@@ -63,3 +63,6 @@ data/
 
 # Cache directories
 .cache/
+
+# AI stuff
+CLAUDE.md

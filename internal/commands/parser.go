@@ -199,10 +199,25 @@ func (p *Parser) parseChartArgs(command *types.Command, args []string) error {
 	}
 
 	command.User = args[0]
+	command.ChartSize = 3 // default
+
 	if len(args) > 1 {
 		command.Period = args[1]
 	} else {
 		command.Period = "7d" // default
+	}
+
+	if len(args) > 2 {
+		sizeStr := strings.ToLower(args[2])
+		// Accept "NxN" or just "N"
+		if idx := strings.Index(sizeStr, "x"); idx != -1 {
+			sizeStr = sizeStr[:idx]
+		}
+		n, err := strconv.Atoi(sizeStr)
+		if err != nil || n < 2 || n > 10 {
+			return errors.NewValidationError("chart size must be between 2 and 10 (e.g. 5x5)")
+		}
+		command.ChartSize = n
 	}
 
 	return nil
@@ -327,7 +342,7 @@ func GetHelpText() string {
 ` +
 		`!rp <user> <limit>: Last <limit> songs played by <user>
 ` +
-		`!chart <user> <period>: Visual album chart for <user>
+		`!chart <user> <period> [size]: Visual album chart for <user> (size: 2x2–10x10, default 3x3)
 ` +
 		`!kga <period>: Top listened albums in Kagang in <period>
 ` +
