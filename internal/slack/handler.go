@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -147,7 +148,7 @@ func (h *Handler) handleAppMention(ctx context.Context, event *slackevents.AppMe
 	response := h.processCommand(cmdCtx, cmd)
 
 	// Send the response
-	h.sendResponse(event.Channel, response)
+	h.sendResponse(cmdCtx, event.Channel, response)
 
 	elapsed := time.Since(start)
 	h.logger.Info("Completed app mention processing", "duration", elapsed)
@@ -440,7 +441,7 @@ func (h *Handler) formatPeriodText(period string) string {
 }
 
 // sendResponse sends a bot response to the specified channel
-func (h *Handler) sendResponse(channel string, response *types.BotResponse) {
+func (h *Handler) sendResponse(ctx context.Context, channel string, response *types.BotResponse) {
 	switch response.Type {
 	case types.ResponseTypeText:
 		if response.Content != "" {
@@ -451,14 +452,20 @@ func (h *Handler) sendResponse(channel string, response *types.BotResponse) {
 
 	case types.ResponseTypeFile:
 		if response.File != nil {
-			params := slack.FileUploadParameters{
+			fileInfo, err := os.Stat(response.File.Path)
+			if err != nil {
+				h.logger.Error("Failed to stat chart file", "error", err)
+				break
+			}
+			params := slack.UploadFileV2Parameters{
 				File:     response.File.Path,
+				FileSize: int(fileInfo.Size()),
 				Filename: response.File.Filename,
-				Channels: []string{channel},
+				Channel:  channel,
 				Title:    response.File.Title,
 			}
 
-			if _, err := h.api.UploadFile(params); err != nil {
+			if _, err := h.api.UploadFileV2Context(ctx, params); err != nil {
 				h.logger.Error("Failed to upload file", "error", err)
 			}
 		}

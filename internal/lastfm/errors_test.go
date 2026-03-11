@@ -364,6 +364,16 @@ func (m *slowMockAPI) GetTrackInfo(ctx context.Context, params map[string]interf
 	return &TrackInfoResponse{}, nil
 }
 
+func (m *slowMockAPI) GetArtistTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error) {
+	m.trackCall("GetArtistTopAlbums")
+	return &TopAlbumsResponse{}, nil
+}
+
+func (m *slowMockAPI) GetArtistTopTracks(ctx context.Context, params map[string]interface{}) (*TopTracksResponse, error) {
+	m.trackCall("GetArtistTopTracks")
+	return &TopTracksResponse{}, nil
+}
+
 func TestClient_EmptyResponseHandling(t *testing.T) {
 	// Test how the client handles empty or minimal responses
 	tests := []struct {
@@ -564,5 +574,13 @@ func (e *errorMockAPI) GetAlbumInfo(ctx context.Context, params map[string]inter
 }
 
 func (e *errorMockAPI) GetTrackInfo(ctx context.Context, params map[string]interface{}) (*TrackInfoResponse, error) {
+	return nil, &APIError{Code: 6, Message: "User not found"}
+}
+
+func (e *errorMockAPI) GetArtistTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error) {
+	return nil, &APIError{Code: 6, Message: "User not found"}
+}
+
+func (e *errorMockAPI) GetArtistTopTracks(ctx context.Context, params map[string]interface{}) (*TopTracksResponse, error) {
 	return nil, &APIError{Code: 6, Message: "User not found"}
 }

@@ -156,6 +156,38 @@ func (m *mockAPI) GetTrackInfo(ctx context.Context, params map[string]interface{
 	}, nil
 }
 
+func (m *mockAPI) GetArtistTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error) {
+	m.recordCall("GetArtistTopAlbums")
+	return &TopAlbumsResponse{
+		TopAlbums: struct {
+			Albums []Album `json:"album"`
+		}{
+			Albums: []Album{
+				{
+					Name:   "Mock Artist Album",
+					Artist: Artist{Name: "Mock Artist"},
+				},
+			},
+		},
+	}, nil
+}
+
+func (m *mockAPI) GetArtistTopTracks(ctx context.Context, params map[string]interface{}) (*TopTracksResponse, error) {
+	m.recordCall("GetArtistTopTracks")
+	return &TopTracksResponse{
+		TopTracks: struct {
+			Tracks []Track `json:"track"`
+		}{
+			Tracks: []Track{
+				{
+					Name:   "Mock Artist Track",
+					Artist: Artist{Name: "Mock Artist"},
+				},
+			},
+		},
+	}, nil
+}
+
 // Test helpers
 
 func createTestClient() *Client {

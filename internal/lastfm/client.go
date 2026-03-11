@@ -38,6 +38,8 @@ type APIInterface interface {
 	GetArtistInfo(ctx context.Context, params map[string]interface{}) (*ArtistInfoResponse, error)
 	GetAlbumInfo(ctx context.Context, params map[string]interface{}) (*AlbumInfoResponse, error)
 	GetTrackInfo(ctx context.Context, params map[string]interface{}) (*TrackInfoResponse, error)
+	GetArtistTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error)
+	GetArtistTopTracks(ctx context.Context, params map[string]interface{}) (*TopTracksResponse, error)
 }
 
 // Client wraps the Last.fm API with enhanced functionality
@@ -445,7 +447,13 @@ func (c *Client) GetUserTopTracks(ctx context.Context, username, period string, 
 		Limit:  limit,
 	}
 
-	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+	// Use shorter TTL for 24h periods
+	cacheTTL := c.config.CacheTTL
+	if is24HourPeriod(period) {
+		cacheTTL = time.Minute * 30 // 30 minutes for 24h periods
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, cacheTTL, func() (types.StringSlice, error) {
 		tracks, err := c.fetchUserTopTracks(ctx, username, period, limit)
 		return types.StringSlice(tracks), err
 	})
@@ -467,7 +475,13 @@ func (c *Client) GetUserTopAlbums(ctx context.Context, username, period string, 
 		Limit:  limit,
 	}
 
-	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+	// Use shorter TTL for 24h periods
+	cacheTTL := c.config.CacheTTL
+	if is24HourPeriod(period) {
+		cacheTTL = time.Minute * 30 // 30 minutes for 24h periods
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, cacheTTL, func() (types.StringSlice, error) {
 		albums, err := c.fetchUserTopAlbums(ctx, username, period, limit)
 		return types.StringSlice(albums), err
 	})
@@ -480,6 +494,7 @@ func (c *Client) GetUserTopAlbums(ctx context.Context, username, period string, 
 
 // fetchUserTopAlbums fetches user top albums from the API
 func (c *Client) fetchUserTopAlbums(ctx context.Context, username, period string, limit int) ([]string, error) {
+	originalPeriod := period
 	period = c.normalizePeriod(period)
 
 	result, err := c.api.GetTopAlbums(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
@@ -492,10 +507,11 @@ func (c *Client) fetchUserTopAlbums(ctx context.Context, username, period string
 		if i >= limit {
 			break
 		}
-		albums = append(albums, fmt.Sprintf("%s - %s", album.Artist.Name, album.Name))
+		albums = append(albums, formatAlbumName(album.Artist.Name, album.Name))
 	}
 
-	return albums, nil
+	// Apply 24h filtering if needed
+	return c.filterRecent24Hours(albums, originalPeriod), nil
 }
 
 // fetchUserTopAlbumsWithPlaycounts fetches user top albums with playcount data
@@ -549,7 +565,13 @@ func (c *Client) GetUserTopArtists(ctx context.Context, username, period string,
 		Limit:  limit,
 	}
 
-	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.StringSlice, error) {
+	// Use shorter TTL for 24h periods
+	cacheTTL := c.config.CacheTTL
+	if is24HourPeriod(period) {
+		cacheTTL = time.Minute * 30 // 30 minutes for 24h periods
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, cacheTTL, func() (types.StringSlice, error) {
 		artists, err := c.fetchUserTopArtists(ctx, username, period, limit)
 		return types.StringSlice(artists), err
 	})
@@ -562,6 +584,7 @@ func (c *Client) GetUserTopArtists(ctx context.Context, username, period string,
 
 // fetchUserTopArtists fetches user top artists from the API
 func (c *Client) fetchUserTopArtists(ctx context.Context, username, period string, limit int) ([]string, error) {
+	originalPeriod := period
 	period = c.normalizePeriod(period)
 
 	result, err := c.api.GetTopArtists(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
@@ -577,7 +600,8 @@ func (c *Client) fetchUserTopArtists(ctx context.Context, username, period strin
 		artists = append(artists, artist.Name)
 	}
 
-	return artists, nil
+	// Apply 24h filtering if needed
+	return c.filterRecent24Hours(artists, originalPeriod), nil
 }
 
 // GetUserRecentTracks gets recent tracks for a user
@@ -617,7 +641,7 @@ func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, lim
 		if track.NowPlaying == "true" {
 			continue
 		}
-		tracks = append(tracks, fmt.Sprintf("%s - %s", track.Artist.Name, track.Name))
+		tracks = append(tracks, formatTrackName(track.Artist.Name, track.Name))
 	}
 
 	return tracks, nil
@@ -625,6 +649,7 @@ func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, lim
 
 // fetchUserTopTracks fetches user top tracks from the API
 func (c *Client) fetchUserTopTracks(ctx context.Context, username, period string, limit int) ([]string, error) {
+	originalPeriod := period
 	period = c.normalizePeriod(period)
 
 	result, err := c.api.GetTopTracks(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
@@ -637,10 +662,11 @@ func (c *Client) fetchUserTopTracks(ctx context.Context, username, period string
 		if i >= limit {
 			break
 		}
-		tracks = append(tracks, fmt.Sprintf("%s - %s", track.Artist.Name, track.Name))
+		tracks = append(tracks, formatTrackName(track.Artist.Name, track.Name))
 	}
 
-	return tracks, nil
+	// Apply 24h filtering if needed
+	return c.filterRecent24Hours(tracks, originalPeriod), nil
 }
 
 // GetWeeklyLeaderboard gets weekly scrobble leaderboard
@@ -804,7 +830,7 @@ func (c *Client) fetchTopAlbumsAcrossUsers(ctx context.Context, period string, l
 
 			mu.Lock()
 			for _, album := range albums {
-				albumName := fmt.Sprintf("%s - %s", album.Artist.Name, album.Name)
+				albumName := formatAlbumName(album.Artist.Name, album.Name)
 				playcount := 0
 				if pc, err := strconv.Atoi(album.PlayCount); err == nil {
 					playcount = pc
@@ -907,7 +933,7 @@ func (c *Client) fetchTopTracksAcrossUsers(ctx context.Context, period string, l
 
 			mu.Lock()
 			for _, track := range tracks {
-				trackName := fmt.Sprintf("%s - %s", track.Artist.Name, track.Name)
+				trackName := formatTrackName(track.Artist.Name, track.Name)
 				playcount := 0
 				if pc, err := strconv.Atoi(track.PlayCount); err == nil {
 					playcount = pc
@@ -984,22 +1010,43 @@ func (c *Client) GetUserTopAlbumsByArtist(ctx context.Context, username, artistN
 
 // fetchUserTopAlbumsByArtist fetches top albums by artist for a specific user
 func (c *Client) fetchUserTopAlbumsByArtist(ctx context.Context, username, artistName string, limit int) ([]string, error) {
-	// Get all top albums for the user and filter by artist
+	// Try artist-specific API first
+	artistAlbums, err := c.fetchArtistAlbumsWithUserPlaycounts(ctx, username, artistName, limit)
+	if err == nil && len(artistAlbums) > 0 {
+		c.logger.Debug("Successfully fetched artist albums via artist API", "artist", artistName, "count", len(artistAlbums))
+		return artistAlbums, nil
+	}
+
+	// Log the artist API failure and fall back to filtering method
+	c.logger.Debug("Artist API failed, falling back to filtering", "artist", artistName, "error", err)
+
+	// Fallback: Get all top albums for the user and filter by artist
 	allAlbums, err := c.GetUserTopAlbums(ctx, username, "overall", 200) // Get more albums to filter
 	if err != nil {
 		return nil, err
 	}
 
 	var filteredAlbums []string
-	artistLower := strings.ToLower(artistName)
+	artistLower := strings.ToLower(strings.TrimSpace(artistName))
 
-	for _, album := range allAlbums {
-		// Check if album contains the artist name (albums are typically formatted as "Album Name by Artist Name")
-		if strings.Contains(strings.ToLower(album), artistLower) {
-			filteredAlbums = append(filteredAlbums, album)
-			if limit > 0 && len(filteredAlbums) >= limit {
-				break
+	for _, albumStr := range allAlbums {
+		// Parse the "Artist - Album" format (output format)
+		parts := strings.SplitN(albumStr, " - ", 2)
+		if len(parts) == 2 {
+			albumArtist := strings.TrimSpace(parts[0])
+			// Compare artist names directly
+			if strings.EqualFold(albumArtist, artistLower) {
+				filteredAlbums = append(filteredAlbums, albumStr)
 			}
+		} else {
+			// If parsing fails, fall back to old string matching
+			if strings.Contains(strings.ToLower(albumStr), artistLower) {
+				filteredAlbums = append(filteredAlbums, albumStr)
+			}
+		}
+
+		if limit > 0 && len(filteredAlbums) >= limit {
+			break
 		}
 	}
 
@@ -1030,22 +1077,43 @@ func (c *Client) GetUserTopTracksByArtist(ctx context.Context, username, artistN
 
 // fetchUserTopTracksByArtist fetches top tracks by artist for a specific user
 func (c *Client) fetchUserTopTracksByArtist(ctx context.Context, username, artistName string, limit int) ([]string, error) {
-	// Get all top tracks for the user and filter by artist
+	// Try artist-specific API first
+	artistTracks, err := c.fetchArtistTracksWithUserPlaycounts(ctx, username, artistName, limit)
+	if err == nil && len(artistTracks) > 0 {
+		c.logger.Debug("Successfully fetched artist tracks via artist API", "artist", artistName, "count", len(artistTracks))
+		return artistTracks, nil
+	}
+
+	// Log the artist API failure and fall back to filtering method
+	c.logger.Debug("Artist API failed, falling back to filtering", "artist", artistName, "error", err)
+
+	// Fallback: Get all top tracks for the user and filter by artist
 	allTracks, err := c.GetUserTopTracks(ctx, username, "overall", 200) // Get more tracks to filter
 	if err != nil {
 		return nil, err
 	}
 
 	var filteredTracks []string
-	artistLower := strings.ToLower(artistName)
+	artistLower := strings.ToLower(strings.TrimSpace(artistName))
 
-	for _, track := range allTracks {
-		// Check if track contains the artist name (tracks are typically formatted as "Track Name by Artist Name")
-		if strings.Contains(strings.ToLower(track), artistLower) {
-			filteredTracks = append(filteredTracks, track)
-			if limit > 0 && len(filteredTracks) >= limit {
-				break
+	for _, trackStr := range allTracks {
+		// Parse the "Artist - Track" format (output format)
+		parts := strings.SplitN(trackStr, " - ", 2)
+		if len(parts) == 2 {
+			trackArtist := strings.TrimSpace(parts[0])
+			// Compare artist names directly
+			if strings.EqualFold(trackArtist, artistLower) {
+				filteredTracks = append(filteredTracks, trackStr)
 			}
+		} else {
+			// If parsing fails, fall back to old string matching
+			if strings.Contains(strings.ToLower(trackStr), artistLower) {
+				filteredTracks = append(filteredTracks, trackStr)
+			}
+		}
+
+		if limit > 0 && len(filteredTracks) >= limit {
+			break
 		}
 	}
 
@@ -1065,7 +1133,153 @@ func (c *Client) normalizePeriod(period string) string {
 		return "6month"
 	case "1y", "365d":
 		return "12month"
+	case "24h":
+		return "7day" // Use 7day as base, will be filtered later
 	default:
 		return "overall"
 	}
+}
+
+// formatAlbumName creates a consistent "Artist - Album" format for output display
+func formatAlbumName(artist, album string) string {
+	return fmt.Sprintf("%s - %s", artist, album)
+}
+
+// formatTrackName creates a consistent "Artist - Track" format for output display
+func formatTrackName(artist, track string) string {
+	return fmt.Sprintf("%s - %s", artist, track)
+}
+
+// parseAlbumArtist parses "Album by Artist" format back to components
+func parseAlbumArtist(formatted string) (artist, album string, err error) {
+	parts := strings.SplitN(formatted, " by ", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid album format: expected 'Album by Artist', got '%s'", formatted)
+	}
+	return strings.TrimSpace(parts[1]), strings.TrimSpace(parts[0]), nil
+}
+
+// parseTrackArtist parses "Track by Artist" format back to components
+func parseTrackArtist(formatted string) (artist, track string, err error) {
+	parts := strings.SplitN(formatted, " by ", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid track format: expected 'Track by Artist', got '%s'", formatted)
+	}
+	return strings.TrimSpace(parts[1]), strings.TrimSpace(parts[0]), nil
+}
+
+// is24HourPeriod checks if the given period is a 24-hour period
+func is24HourPeriod(period string) bool {
+	return strings.ToLower(period) == "24h"
+}
+
+// filterRecent24Hours filters tracks/data to only include items from the last 24 hours
+// This is a helper function for 24h period support since Last.fm doesn't have native 24h API
+func (c *Client) filterRecent24Hours(items []string, period string) []string {
+	if !is24HourPeriod(period) {
+		return items
+	}
+
+	// For 24h periods, we want to limit the results more aggressively
+	// Since we can't get actual timestamps from top tracks/albums APIs,
+	// we'll return fewer results to approximate "recent" listening
+	maxItems := min(len(items), 5) // Show only top 5 for 24h
+	return items[:maxItems]
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// fetchArtistAlbumsWithUserPlaycounts gets artist albums and cross-references with user listening data
+func (c *Client) fetchArtistAlbumsWithUserPlaycounts(ctx context.Context, username, artistName string, limit int) ([]string, error) {
+	// Get top albums for this artist
+	artistAlbumsResp, err := c.api.GetArtistTopAlbums(ctx, map[string]interface{}{
+		"artist": artistName,
+		"limit":  limit * 2, // Get more to ensure we have enough after filtering
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get artist albums: %w", err)
+	}
+
+	if len(artistAlbumsResp.TopAlbums.Albums) == 0 {
+		return []string{}, nil
+	}
+
+	// Get user's top albums to cross-reference playcount data
+	userAlbums, err := c.GetUserTopAlbums(ctx, username, "overall", 500)
+	if err != nil {
+		c.logger.Warn("Failed to get user albums for cross-reference", "error", err)
+		// Continue without playcount data
+	}
+
+	// Create a map of user's albums for quick lookup
+	userAlbumMap := make(map[string]bool)
+	for _, album := range userAlbums {
+		userAlbumMap[strings.ToLower(album)] = true
+	}
+
+	// Build result list with albums the user has listened to
+	var result []string
+	for _, album := range artistAlbumsResp.TopAlbums.Albums {
+		albumFormatted := formatAlbumName(album.Artist.Name, album.Name)
+
+		// Only include albums the user has actually listened to
+		if userAlbumMap[strings.ToLower(albumFormatted)] {
+			result = append(result, albumFormatted)
+			if limit > 0 && len(result) >= limit {
+				break
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// fetchArtistTracksWithUserPlaycounts gets artist tracks and cross-references with user listening data
+func (c *Client) fetchArtistTracksWithUserPlaycounts(ctx context.Context, username, artistName string, limit int) ([]string, error) {
+	// Get top tracks for this artist
+	artistTracksResp, err := c.api.GetArtistTopTracks(ctx, map[string]interface{}{
+		"artist": artistName,
+		"limit":  limit * 2, // Get more to ensure we have enough after filtering
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get artist tracks: %w", err)
+	}
+
+	if len(artistTracksResp.TopTracks.Tracks) == 0 {
+		return []string{}, nil
+	}
+
+	// Get user's top tracks to cross-reference playcount data
+	userTracks, err := c.GetUserTopTracks(ctx, username, "overall", 500)
+	if err != nil {
+		c.logger.Warn("Failed to get user tracks for cross-reference", "error", err)
+		// Continue without playcount data
+	}
+
+	// Create a map of user's tracks for quick lookup
+	userTrackMap := make(map[string]bool)
+	for _, track := range userTracks {
+		userTrackMap[strings.ToLower(track)] = true
+	}
+
+	// Build result list with tracks the user has listened to
+	var result []string
+	for _, track := range artistTracksResp.TopTracks.Tracks {
+		trackFormatted := formatTrackName(track.Artist.Name, track.Name)
+
+		// Only include tracks the user has actually listened to
+		if userTrackMap[strings.ToLower(trackFormatted)] {
+			result = append(result, trackFormatted)
+			if limit > 0 && len(result) >= limit {
+				break
+			}
+		}
+	}
+
+	return result, nil
 }

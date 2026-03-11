@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -113,11 +114,13 @@ type Album struct {
 	PlayCount string  `json:"playcount"`
 }
 
-// UnmarshalJSON provides custom JSON unmarshaling for Album to handle both string and object artist fields
+// UnmarshalJSON provides custom JSON unmarshaling for Album to handle both string and object artist fields,
+// and both string and number playcount fields.
 func (a *Album) UnmarshalJSON(data []byte) error {
 	type Alias Album
 	aux := &struct {
-		Artist interface{} `json:"artist"`
+		Artist    interface{} `json:"artist"`
+		PlayCount interface{} `json:"playcount"`
 		*Alias
 	}{
 		Alias: (*Alias)(a),
@@ -151,6 +154,14 @@ func (a *Album) UnmarshalJSON(data []byte) error {
 		}
 	}
 
+	// Handle playcount field - can be either string or number
+	switch v := aux.PlayCount.(type) {
+	case string:
+		a.PlayCount = v
+	case float64:
+		a.PlayCount = strconv.Itoa(int(v))
+	}
+
 	return nil
 }
 
@@ -167,6 +178,43 @@ type Track struct {
 		UTS  string `json:"uts"`
 		Text string `json:"#text"`
 	} `json:"date"`
+}
+
+// UnmarshalJSON provides custom JSON unmarshaling for Track to handle both string and object @attr fields,
+// and both string and number playcount fields.
+func (t *Track) UnmarshalJSON(data []byte) error {
+	type Alias Track
+	aux := &struct {
+		NowPlaying interface{} `json:"@attr"`
+		PlayCount  interface{} `json:"playcount"`
+		*Alias
+	}{
+		Alias: (*Alias)(t),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// Handle @attr field - can be a string or an object like {"nowplaying": "true"}
+	switch v := aux.NowPlaying.(type) {
+	case string:
+		t.NowPlaying = v
+	case map[string]interface{}:
+		if np, ok := v["nowplaying"].(string); ok {
+			t.NowPlaying = np
+		}
+	}
+
+	// Handle playcount field - can be either string or number
+	switch v := aux.PlayCount.(type) {
+	case string:
+		t.PlayCount = v
+	case float64:
+		t.PlayCount = strconv.Itoa(int(v))
+	}
+
+	return nil
 }
 
 // AlbumInfo represents detailed album information
@@ -369,6 +417,36 @@ func (api *API) GetTrackInfo(ctx context.Context, params map[string]interface{})
 	}
 
 	var response TrackInfoResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+// GetArtistTopAlbums gets top albums for a specific artist
+func (api *API) GetArtistTopAlbums(ctx context.Context, params map[string]interface{}) (*TopAlbumsResponse, error) {
+	body, err := api.makeRequest(ctx, "artist.getTopAlbums", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var response TopAlbumsResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+// GetArtistTopTracks gets top tracks for a specific artist
+func (api *API) GetArtistTopTracks(ctx context.Context, params map[string]interface{}) (*TopTracksResponse, error) {
+	body, err := api.makeRequest(ctx, "artist.getTopTracks", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var response TopTracksResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, err
 	}
