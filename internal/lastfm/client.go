@@ -22,6 +22,13 @@ type albumAggregation struct {
 	UserCount      int
 }
 
+// artistAggregation holds aggregated artist statistics with per-user playcounts
+type artistAggregation struct {
+	TotalPlaycount int
+	UserCount      int
+	UserPlaycounts map[string]int // username -> playcount
+}
+
 // trackAggregation holds aggregated track statistics
 type trackAggregation struct {
 	TotalPlaycount int
@@ -1237,6 +1244,269 @@ func (c *Client) fetchArtistAlbumsWithUserPlaycounts(ctx context.Context, userna
 	}
 
 	return result, nil
+}
+
+// fetchUserTopArtistsWithPlaycounts fetches user top artists with playcount data
+func (c *Client) fetchUserTopArtistsWithPlaycounts(ctx context.Context, username, period string, limit int) ([]Artist, error) {
+	period = c.normalizePeriod(period)
+
+	result, err := c.api.GetTopArtists(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var artists []Artist
+	for i, artist := range result.TopArtists.Artists {
+		if i >= limit {
+			break
+		}
+		artists = append(artists, artist)
+	}
+
+	return artists, nil
+}
+
+// GetGroupRecommendations returns artists the group loves that the given user hasn't listened to much
+func (c *Client) GetGroupRecommendations(ctx context.Context, username, period string) ([]types.RecommendedArtist, error) {
+	c.logger.Debug("Getting group recommendations", "user", username, "period", period)
+
+	cacheKey := types.CacheKey{
+		Type:   "group_recommendations",
+		User:   username,
+		Period: period,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.RecommendedArtists, error) {
+		artists, err := c.fetchGroupRecommendations(ctx, username, period)
+		return types.RecommendedArtists(artists), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get group recommendations for %s", username), err)
+	}
+
+	return []types.RecommendedArtist(result), nil
+}
+
+// fetchGroupRecommendations fetches and computes group recommendations
+func (c *Client) fetchGroupRecommendations(ctx context.Context, username, period string) ([]types.RecommendedArtist, error) {
+	artistStats := make(map[string]*artistAggregation)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, user := range c.config.Users {
+		wg.Add(1)
+		go func(user string) {
+			defer wg.Done()
+
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				return
+			}
+
+			artists, err := c.fetchUserTopArtistsWithPlaycounts(ctx, user, period, 100)
+			if err != nil {
+				c.logger.Warn("Failed to get top artists for user", "user", user, "error", err)
+				return
+			}
+
+			mu.Lock()
+			for _, artist := range artists {
+				playcount := 0
+				if pc, err := strconv.Atoi(artist.PlayCount); err == nil {
+					playcount = pc
+				}
+				key := strings.ToLower(artist.Name)
+				if existing, ok := artistStats[key]; ok {
+					existing.TotalPlaycount += playcount
+					existing.UserCount++
+					existing.UserPlaycounts[user] = playcount
+				} else {
+					artistStats[key] = &artistAggregation{
+						TotalPlaycount: playcount,
+						UserCount:      1,
+						UserPlaycounts: map[string]int{user: playcount},
+					}
+				}
+			}
+			mu.Unlock()
+		}(user)
+	}
+
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	usernameLower := strings.ToLower(username)
+	var recommendations []types.RecommendedArtist
+
+	for artistKey, agg := range artistStats {
+		userPlaycount := agg.UserPlaycounts[usernameLower]
+		groupExcludingUser := agg.TotalPlaycount - userPlaycount
+
+		// Only include artists with at least 2 OTHER listeners
+		otherListeners := agg.UserCount
+		if _, hasUser := agg.UserPlaycounts[usernameLower]; hasUser {
+			otherListeners = agg.UserCount - 1
+		}
+		if otherListeners < 2 {
+			continue
+		}
+
+		score := float64(groupExcludingUser) / float64(userPlaycount+1)
+
+		// Find canonical name (with original casing)
+		canonicalName := artistKey
+		for _, user := range c.config.Users {
+			if pc, ok := agg.UserPlaycounts[strings.ToLower(user)]; ok && pc > 0 {
+				// We stored lowercase keys, so recover the name from first matching user's data
+				_ = pc
+			}
+		}
+		_ = canonicalName
+
+		recommendations = append(recommendations, types.RecommendedArtist{
+			Name:          artistKey,
+			GroupTotal:    groupExcludingUser,
+			UserPlaycount: userPlaycount,
+			Score:         score,
+		})
+	}
+
+	sort.Slice(recommendations, func(i, j int) bool {
+		return recommendations[i].Score > recommendations[j].Score
+	})
+
+	if len(recommendations) > 7 {
+		recommendations = recommendations[:7]
+	}
+
+	return recommendations, nil
+}
+
+// GetHiddenGem returns a user's hidden gems — artists they love that nobody else in the group listens to
+func (c *Client) GetHiddenGem(ctx context.Context, username, period string) ([]types.HiddenGemArtist, error) {
+	c.logger.Debug("Getting hidden gems", "user", username, "period", period)
+
+	cacheKey := types.CacheKey{
+		Type:   "hidden_gem",
+		User:   username,
+		Period: period,
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, c.config.CacheTTL, func() (types.HiddenGemArtists, error) {
+		artists, err := c.fetchHiddenGem(ctx, username, period)
+		return types.HiddenGemArtists(artists), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get hidden gems for %s", username), err)
+	}
+
+	return []types.HiddenGemArtist(result), nil
+}
+
+// fetchHiddenGem fetches and computes hidden gems for a user
+func (c *Client) fetchHiddenGem(ctx context.Context, username, period string) ([]types.HiddenGemArtist, error) {
+	// Fetch target user's top artists first
+	userArtists, err := c.fetchUserTopArtistsWithPlaycounts(ctx, username, period, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(userArtists) == 0 {
+		return nil, nil
+	}
+
+	// Build map of user's artists (lowercase name -> playcount)
+	userArtistMap := make(map[string]int)
+	for _, artist := range userArtists {
+		playcount := 0
+		if pc, pcErr := strconv.Atoi(artist.PlayCount); pcErr == nil {
+			playcount = pc
+		}
+		userArtistMap[strings.ToLower(artist.Name)] = playcount
+	}
+
+	// Fan-out over all OTHER users, accumulate playcounts for artists in userArtistMap
+	othersTotal := make(map[string]int)
+	othersCount := make(map[string]int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	usernameLower := strings.ToLower(username)
+
+	for _, user := range c.config.Users {
+		if strings.ToLower(user) == usernameLower {
+			continue
+		}
+
+		wg.Add(1)
+		go func(user string) {
+			defer wg.Done()
+
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				return
+			}
+
+			artists, err := c.fetchUserTopArtistsWithPlaycounts(ctx, user, period, 100)
+			if err != nil {
+				c.logger.Warn("Failed to get top artists for user", "user", user, "error", err)
+				return
+			}
+
+			mu.Lock()
+			for _, artist := range artists {
+				key := strings.ToLower(artist.Name)
+				if _, inUserMap := userArtistMap[key]; inUserMap {
+					playcount := 0
+					if pc, pcErr := strconv.Atoi(artist.PlayCount); pcErr == nil {
+						playcount = pc
+					}
+					othersTotal[key] += playcount
+					othersCount[key]++
+				}
+			}
+			mu.Unlock()
+		}(user)
+	}
+
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	var gems []types.HiddenGemArtist
+	for _, artist := range userArtists {
+		key := strings.ToLower(artist.Name)
+		userPlaycount := userArtistMap[key]
+		total := othersTotal[key]
+		count := othersCount[key]
+		score := float64(userPlaycount) / float64(total+1)
+
+		gems = append(gems, types.HiddenGemArtist{
+			Name:          artist.Name,
+			UserPlaycount: userPlaycount,
+			OthersTotal:   total,
+			OthersCount:   count,
+			Score:         score,
+		})
+	}
+
+	sort.Slice(gems, func(i, j int) bool {
+		return gems[i].Score > gems[j].Score
+	})
+
+	if len(gems) > 5 {
+		gems = gems[:5]
+	}
+
+	return gems, nil
 }
 
 // fetchArtistTracksWithUserPlaycounts gets artist tracks and cross-references with user listening data

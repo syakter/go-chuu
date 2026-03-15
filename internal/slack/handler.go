@@ -214,6 +214,12 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 	case types.CommandDiscoveryTrack:
 		return h.handleDiscoveryTrackCommand(ctx, cmd)
 
+	case types.CommandRecommend:
+		return h.handleRecommendCommand(ctx, cmd)
+
+	case types.CommandHiddenGem:
+		return h.handleHiddenGemCommand(ctx, cmd)
+
 	default:
 		return &types.BotResponse{
 			Type:  types.ResponseTypeError,
@@ -656,6 +662,93 @@ func (h *Handler) handleDiscoCommand(ctx context.Context, cmd *types.Command) *t
 
 	for i, album := range albums {
 		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, album))
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// handleRecommendCommand processes group recommendation commands
+func (h *Handler) handleRecommendCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	period := cmd.Period
+	if period == "" {
+		period = "overall"
+	}
+
+	recommendations, err := h.lastfmClient.GetGroupRecommendations(ctx, cmd.User, period)
+	if err != nil {
+		h.logger.Error("Failed to get group recommendations", "error", err, "user", cmd.User, "period", period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(recommendations) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("No recommendations found for %s — they might already listen to everything the group loves!", cmd.User),
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(period)
+	content.WriteString(fmt.Sprintf("Artists the group loves that %s should check out%s:\n\n", cmd.User, periodText))
+
+	for i, rec := range recommendations {
+		if rec.UserPlaycount == 0 {
+			content.WriteString(fmt.Sprintf("%d. %s — %d group scrobbles (0 plays by %s)\n", i+1, rec.Name, rec.GroupTotal, cmd.User))
+		} else {
+			content.WriteString(fmt.Sprintf("%d. %s — %d group scrobbles (%d plays by %s)\n", i+1, rec.Name, rec.GroupTotal, rec.UserPlaycount, cmd.User))
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// handleHiddenGemCommand processes hidden gem commands
+func (h *Handler) handleHiddenGemCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	period := cmd.Period
+	if period == "" {
+		period = "overall"
+	}
+
+	gems, err := h.lastfmClient.GetHiddenGem(ctx, cmd.User, period)
+	if err != nil {
+		h.logger.Error("Failed to get hidden gems", "error", err, "user", cmd.User, "period", period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(gems) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("No hidden gems found for %s!", cmd.User),
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(period)
+	content.WriteString(fmt.Sprintf("%s's hidden gems%s:\n\n", cmd.User, periodText))
+
+	for i, gem := range gems {
+		var othersDesc string
+		switch gem.OthersCount {
+		case 0:
+			othersDesc = "nobody else also listens"
+		case 1:
+			othersDesc = "1 other person also listens"
+		default:
+			othersDesc = fmt.Sprintf("%d others also listen", gem.OthersCount)
+		}
+		content.WriteString(fmt.Sprintf("%d. %s — %d plays (%s)\n", i+1, gem.Name, gem.UserPlaycount, othersDesc))
 	}
 
 	return &types.BotResponse{

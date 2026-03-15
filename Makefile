@@ -1,4 +1,4 @@
-.PHONY: build build-prod build-with-keys build-windows build-windows-with-keys test clean run docker-build docker-run help
+.PHONY: build build-cli build-prod build-with-keys build-windows build-windows-with-keys test clean run docker-build docker-run help
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -30,6 +30,12 @@ all: build
 build:
 	@echo "Building go-chuu..."
 	go build -ldflags "$(LDFLAGS)" -o go-chuu ./cmd/bot
+
+# Build the CLI binary
+build-cli:
+	@echo "Building go-chuu-cli..."
+	mkdir -p bin
+	go build -ldflags "$(LDFLAGS)" -o bin/go-chuu-cli ./cmd/cli
 
 # Build for production with optimizations
 build-prod:
@@ -110,7 +116,7 @@ run:
 clean:
 	@echo "Cleaning..."
 	rm -f go-chuu go-chuu-embedded go-chuu.exe go-chuu-embedded.exe coverage.out coverage.html
-	rm -rf dist/
+	rm -rf dist/ bin/
 
 # Format code
 fmt:
@@ -209,6 +215,7 @@ setup:
 help:
 	@echo "Available targets:"
 	@echo "  build                    - Build the application"
+	@echo "  build-cli                - Build the CLI binary (bin/go-chuu-cli)"
 	@echo "  build-prod               - Build for production with optimizations"
 	@echo "  build-with-keys          - Build with embedded API keys (requires .env)"
 	@echo "  build-windows            - Build for Windows (cross-compile)"

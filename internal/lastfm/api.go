@@ -101,8 +101,9 @@ type Image struct {
 
 // Artist represents an artist
 type Artist struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	PlayCount string `json:"playcount"`
 }
 
 // Album represents an album

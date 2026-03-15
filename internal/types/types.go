@@ -24,6 +24,21 @@ type TrackCount struct {
 	UserCount int    `json:"user_count"` // Number of users who have this track in their top list
 }
 
+type RecommendedArtist struct {
+	Name          string  `json:"name"`
+	GroupTotal    int     `json:"group_total"`
+	UserPlaycount int     `json:"user_playcount"`
+	Score         float64 `json:"score"`
+}
+
+type HiddenGemArtist struct {
+	Name          string  `json:"name"`
+	UserPlaycount int     `json:"user_playcount"`
+	OthersTotal   int     `json:"others_total"`
+	OthersCount   int     `json:"others_count"`
+	Score         float64 `json:"score"`
+}
+
 // Chart types
 type Album struct {
 	Name   string `json:"name"`
@@ -56,6 +71,8 @@ const (
 	CommandTopTracksAll   CommandType = "kgt"
 	CommandDisco          CommandType = "disco"
 	CommandDiscoveryTrack CommandType = "dt"
+	CommandRecommend      CommandType = "rec"
+	CommandHiddenGem      CommandType = "hidden"
 	CommandUnknown        CommandType = "unknown"
 )
 
@@ -161,4 +178,16 @@ type TrackCounts []TrackCount
 
 func (tc TrackCounts) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]TrackCount(tc))
+}
+
+type RecommendedArtists []RecommendedArtist
+
+func (ra RecommendedArtists) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]RecommendedArtist(ra))
+}
+
+type HiddenGemArtists []HiddenGemArtist
+
+func (hg HiddenGemArtists) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]HiddenGemArtist(hg))
 }

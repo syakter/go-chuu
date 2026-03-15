@@ -89,6 +89,39 @@ func Load() (*Config, error) {
 	return config, nil
 }
 
+// LoadForCLI loads configuration for CLI mode — only requires Last.fm API keys.
+// Slack tokens are not required or validated.
+func LoadForCLI() (*Config, error) {
+	cfg := &Config{
+		Users:                 DefaultUsers,
+		LogLevel:              getEnv("LOG_LEVEL", "info"),
+		LogFormat:             getEnv("LOG_FORMAT", "pretty"),
+		Port:                  getEnvInt("PORT", 8080),
+		ShutdownTimeout:       getEnvDuration("SHUTDOWN_TIMEOUT", "30s"),
+		MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 10),
+		CacheEnabled:          getEnvBool("CACHE_ENABLED", true),
+		CacheTTL:              getEnvDuration("CACHE_TTL", "5m"),
+		RequestTimeout:        getEnvDuration("REQUEST_TIMEOUT", "30s"),
+		SlackChannelID:        "C0392543PUY",
+	}
+
+	cfg.LastFMAPIKey = os.Getenv("LASTFM_API_KEY")
+	cfg.LastFMAPISecret = os.Getenv("LASTFM_API_SECRET")
+
+	if cfg.LastFMAPIKey == "" || cfg.LastFMAPISecret == "" {
+		return nil, fmt.Errorf("LASTFM_API_KEY and LASTFM_API_SECRET are required")
+	}
+
+	if users := os.Getenv("USERS"); users != "" {
+		cfg.Users = strings.Split(users, ",")
+		for i, user := range cfg.Users {
+			cfg.Users[i] = strings.TrimSpace(user)
+		}
+	}
+
+	return cfg, cfg.Validate()
+}
+
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if len(c.Users) == 0 {

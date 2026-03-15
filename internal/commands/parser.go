@@ -142,6 +142,14 @@ func (p *Parser) parseCommand(command *types.Command, message string) error {
 		command.Type = types.CommandDiscoveryTrack
 		return p.parseUserArtistArgs(command, args)
 
+	case "!rec":
+		command.Type = types.CommandRecommend
+		return p.parseUserPeriodArgs(command, args)
+
+	case "!hidden":
+		command.Type = types.CommandHiddenGem
+		return p.parseUserPeriodArgs(command, args)
+
 	case "!t":
 		command.Type = types.CommandTrackFans
 		return p.parseTrackQuery(command, strings.Join(args, " "))
@@ -347,6 +355,10 @@ func GetHelpText() string {
 		`!kga <period>: Top listened albums in Kagang in <period>
 ` +
 		`!kgt <period>: Top listened tracks in Kagang in <period>
+` +
+		`!rec <user> [period]: Artists the group loves that <user> should check out
+` +
+		`!hidden <user> [period]: <user>'s hidden gems — artists they love that nobody else listens to
 ` +
 		`!leaderboard: Leaderboard for previous week
 ` +
