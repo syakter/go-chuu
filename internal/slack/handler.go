@@ -484,7 +484,9 @@ func (h *Handler) sendResponse(ctx context.Context, channel string, response *ty
 		}
 
 	case types.ResponseTypeError:
-		h.sendErrorResponse(channel, fmt.Errorf(response.Error))
+		if _, _, err := h.api.PostMessage(channel, slack.MsgOptionText(response.Error, false)); err != nil {
+			h.logger.Error("Failed to send error message", "error", err)
+		}
 	}
 }
 

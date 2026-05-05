@@ -120,6 +120,7 @@ type Album struct {
 func (a *Album) UnmarshalJSON(data []byte) error {
 	type Alias Album
 	aux := &struct {
+		Text      string      `json:"#text"`
 		Artist    interface{} `json:"artist"`
 		PlayCount interface{} `json:"playcount"`
 		*Alias
@@ -129,6 +130,11 @@ func (a *Album) UnmarshalJSON(data []byte) error {
 
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
+	}
+
+	// recenttracks returns album name as "#text" instead of "name"
+	if a.Name == "" && aux.Text != "" {
+		a.Name = aux.Text
 	}
 
 	// Handle artist field - can be either string or Artist object
