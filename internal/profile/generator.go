@@ -68,8 +68,161 @@ type albumWithImage struct {
 	imageURL string
 }
 
+// FetchData fetches Last.fm profile data for a user concurrently and returns it.
+// Album images are not embedded; use Generate for the HTML version with artwork.
+func FetchData(ctx context.Context, api lastfm.APIInterface, username, period string) (*ProfileData, error) {
+	normalised := normalizePeriod(period)
+
+	type albumsResult struct {
+		items []AlbumEntry
+		err   error
+	}
+	type artistsResult struct {
+		items []ArtistEntry
+		err   error
+	}
+	type tracksResult struct {
+		items []TrackEntry
+		err   error
+	}
+	type recentResult struct {
+		items []RecentEntry
+		err   error
+	}
+
+	albumsCh := make(chan albumsResult, 1)
+	artistsCh := make(chan artistsResult, 1)
+	tracksCh := make(chan tracksResult, 1)
+	recentCh := make(chan recentResult, 1)
+
+	go func() {
+		resp, err := api.GetTopAlbums(ctx, map[string]interface{}{
+			"user": username, "period": normalised, "limit": 10,
+		})
+		if err != nil {
+			albumsCh <- albumsResult{err: err}
+			return
+		}
+		var items []AlbumEntry
+		for _, a := range resp.TopAlbums.Albums {
+			pc, _ := strconv.Atoi(a.PlayCount)
+			items = append(items, AlbumEntry{
+				Name:      a.Name,
+				Artist:    a.Artist.Name,
+				URL:       a.URL,
+				Playcount: pc,
+			})
+		}
+		albumsCh <- albumsResult{items: items}
+	}()
+
+	go func() {
+		resp, err := api.GetTopArtists(ctx, map[string]interface{}{
+			"user": username, "period": normalised, "limit": 10,
+		})
+		if err != nil {
+			artistsCh <- artistsResult{err: err}
+			return
+		}
+		var items []ArtistEntry
+		for _, a := range resp.TopArtists.Artists {
+			pc, _ := strconv.Atoi(a.PlayCount)
+			items = append(items, ArtistEntry{
+				Name:      a.Name,
+				URL:       a.URL,
+				Playcount: pc,
+			})
+		}
+		artistsCh <- artistsResult{items: items}
+	}()
+
+	go func() {
+		resp, err := api.GetTopTracks(ctx, map[string]interface{}{
+			"user": username, "period": normalised, "limit": 10,
+		})
+		if err != nil {
+			tracksCh <- tracksResult{err: err}
+			return
+		}
+		var items []TrackEntry
+		for _, t := range resp.TopTracks.Tracks {
+			pc, _ := strconv.Atoi(t.PlayCount)
+			items = append(items, TrackEntry{
+				Name:      t.Name,
+				Artist:    t.Artist.Name,
+				URL:       t.URL,
+				Playcount: pc,
+			})
+		}
+		tracksCh <- tracksResult{items: items}
+	}()
+
+	go func() {
+		resp, err := api.GetRecentTracks(ctx, map[string]interface{}{
+			"user": username, "limit": 6,
+		})
+		if err != nil {
+			recentCh <- recentResult{err: err}
+			return
+		}
+		var items []RecentEntry
+		for _, t := range resp.RecentTracks.Tracks {
+			if t.NowPlaying == "true" {
+				continue
+			}
+			ts := t.Date.Text
+			if ts == "" {
+				ts = "now playing"
+			}
+			items = append(items, RecentEntry{
+				Name:      t.Name,
+				Artist:    t.Artist.Name,
+				URL:       t.URL,
+				Timestamp: ts,
+			})
+			if len(items) >= 5 {
+				break
+			}
+		}
+		recentCh <- recentResult{items: items}
+	}()
+
+	ar := <-albumsCh
+	tr := <-artistsCh
+	tkr := <-tracksCh
+	rr := <-recentCh
+
+	var errMsgs []string
+	if ar.err != nil {
+		errMsgs = append(errMsgs, "albums: "+ar.err.Error())
+	}
+	if tr.err != nil {
+		errMsgs = append(errMsgs, "artists: "+tr.err.Error())
+	}
+	if tkr.err != nil {
+		errMsgs = append(errMsgs, "tracks: "+tkr.err.Error())
+	}
+	if rr.err != nil {
+		errMsgs = append(errMsgs, "recent: "+rr.err.Error())
+	}
+	if len(errMsgs) == 4 {
+		return nil, fmt.Errorf("all API calls failed: %s", strings.Join(errMsgs, "; "))
+	}
+
+	return &ProfileData{
+		Username:     username,
+		Period:       period,
+		PeriodLabel:  periodLabel(period),
+		ProfileURL:   "https://www.last.fm/user/" + username,
+		TopAlbums:    ar.items,
+		TopArtists:   tr.items,
+		TopTracks:    tkr.items,
+		RecentTracks: rr.items,
+	}, nil
+}
+
 // Generate fetches data for the user, embeds album artwork as base64, renders HTML,
-// writes it to a temp file, and returns the file path.
+// writes it to a temp file, and returns the file path. Used by the CLI.
 func Generate(ctx context.Context, api lastfm.APIInterface, username, period string) (string, error) {
 	normalised := normalizePeriod(period)
 
@@ -213,7 +366,6 @@ func Generate(ctx context.Context, api lastfm.APIInterface, username, period str
 		return "", fmt.Errorf("all API calls failed: %s", strings.Join(errMsgs, "; "))
 	}
 
-	// Fetch album artwork concurrently, embedding as base64 data URIs
 	albums := embedAlbumImages(ctx, ar.items)
 
 	data := ProfileData{
@@ -321,6 +473,55 @@ func fetchBase64Image(ctx context.Context, imageURL string) string {
 	}
 	encoded := base64.StdEncoding.EncodeToString(body)
 	return fmt.Sprintf("data:%s;base64,%s", contentType, encoded)
+}
+
+// FormatMarkdown formats a ProfileData as a Slack mrkdwn message.
+func FormatMarkdown(d *ProfileData) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "*<https://www.last.fm/user/%s|%s>* · %s\n", d.Username, d.Username, d.PeriodLabel)
+
+	if len(d.TopArtists) > 0 {
+		b.WriteString("\n*Top Artists*\n")
+		for i, a := range d.TopArtists {
+			if a.Playcount > 0 {
+				fmt.Fprintf(&b, "%d. <%s|%s> — %d plays\n", i+1, a.URL, a.Name, a.Playcount)
+			} else {
+				fmt.Fprintf(&b, "%d. <%s|%s>\n", i+1, a.URL, a.Name)
+			}
+		}
+	}
+
+	if len(d.TopAlbums) > 0 {
+		b.WriteString("\n*Top Albums*\n")
+		for i, a := range d.TopAlbums {
+			if a.Playcount > 0 {
+				fmt.Fprintf(&b, "%d. <%s|%s> — %s (%d plays)\n", i+1, a.URL, a.Name, a.Artist, a.Playcount)
+			} else {
+				fmt.Fprintf(&b, "%d. <%s|%s> — %s\n", i+1, a.URL, a.Name, a.Artist)
+			}
+		}
+	}
+
+	if len(d.TopTracks) > 0 {
+		b.WriteString("\n*Top Tracks*\n")
+		for i, t := range d.TopTracks {
+			if t.Playcount > 0 {
+				fmt.Fprintf(&b, "%d. <%s|%s> — %s (%d plays)\n", i+1, t.URL, t.Name, t.Artist, t.Playcount)
+			} else {
+				fmt.Fprintf(&b, "%d. <%s|%s> — %s\n", i+1, t.URL, t.Name, t.Artist)
+			}
+		}
+	}
+
+	if len(d.RecentTracks) > 0 {
+		b.WriteString("\n*Recently Played*\n")
+		for _, t := range d.RecentTracks {
+			fmt.Fprintf(&b, "• <%s|%s> — %s  _%s_\n", t.URL, t.Name, t.Artist, t.Timestamp)
+		}
+	}
+
+	return b.String()
 }
 
 // normalizePeriod converts user-friendly periods to Last.fm API periods.
