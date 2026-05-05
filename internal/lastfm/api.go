@@ -235,10 +235,10 @@ func (t *Track) UnmarshalJSON(data []byte) error {
 
 // AlbumInfo represents detailed album information
 type AlbumInfo struct {
-	Name          string `json:"name"`
-	Artist        string `json:"artist"`
-	URL           string `json:"url"`
-	UserPlayCount string `json:"userplaycount"`
+	Name          string      `json:"name"`
+	Artist        string      `json:"artist"`
+	URL           string      `json:"url"`
+	UserPlayCount json.Number `json:"userplaycount"`
 }
 
 // ArtistInfo represents detailed artist information

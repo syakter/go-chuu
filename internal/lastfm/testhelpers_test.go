@@ -131,7 +131,7 @@ func (b *MockResponseBuilder) WithAlbumInfo(name, artist, userPlayCount string) 
 			Name:          name,
 			Artist:        artist,
 			URL:           "http://test.com/album",
-			UserPlayCount: userPlayCount,
+			UserPlayCount: json.Number(userPlayCount),
 		},
 	}
 	return b

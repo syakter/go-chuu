@@ -73,6 +73,7 @@ const (
 	CommandDiscoveryTrack CommandType = "dt"
 	CommandRecommend      CommandType = "rec"
 	CommandHiddenGem      CommandType = "hidden"
+	CommandProfile        CommandType = "profile"
 	CommandUnknown        CommandType = "unknown"
 )
 

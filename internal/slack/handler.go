@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/syakter/go-chuu/internal/config"
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/lastfm"
+	"github.com/syakter/go-chuu/internal/profile"
 	"github.com/syakter/go-chuu/internal/types"
 )
 
@@ -219,6 +221,9 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 
 	case types.CommandHiddenGem:
 		return h.handleHiddenGemCommand(ctx, cmd)
+
+	case types.CommandProfile:
+		return h.handleProfileCommand(ctx, cmd)
 
 	default:
 		return &types.BotResponse{
@@ -754,6 +759,32 @@ func (h *Handler) handleHiddenGemCommand(ctx context.Context, cmd *types.Command
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
 		Content: content.String(),
+	}
+}
+
+// handleProfileCommand processes HTML profile card commands
+func (h *Handler) handleProfileCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	path, err := profile.Generate(ctx, h.lastfmClient.GetAPI(), cmd.User, cmd.Period)
+	if err != nil {
+		h.logger.Error("Failed to generate profile", "error", err, "user", cmd.User, "period", cmd.Period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	periodSlug := cmd.Period
+	if periodSlug == "" {
+		periodSlug = "overall"
+	}
+
+	return &types.BotResponse{
+		Type: types.ResponseTypeFile,
+		File: &types.FileUpload{
+			Path:     path,
+			Filename: filepath.Base(path),
+			Title:    fmt.Sprintf("%s's music profile (%s)", cmd.User, periodSlug),
+		},
 	}
 }
 

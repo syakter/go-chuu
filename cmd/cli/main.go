@@ -19,6 +19,7 @@ import (
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/lastfm"
 	"github.com/syakter/go-chuu/internal/logger"
+	"github.com/syakter/go-chuu/internal/profile"
 	"github.com/syakter/go-chuu/internal/types"
 )
 
@@ -68,6 +69,7 @@ func run() error {
 		"track": true, "top": true, "ta": true, "topartist": true, "rp": true,
 		"leaderboard": true, "artist": true, "kga": true, "kgt": true,
 		"disco": true, "dt": true, "t": true, "rec": true, "hidden": true,
+		"profile": true,
 	}
 	if knownCmds[strings.ToLower(args[0])] {
 		args[0] = "!" + args[0]
@@ -142,6 +144,9 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 
 	case types.CommandHiddenGem:
 		return handleHiddenGem(ctx, cmd, lf)
+
+	case types.CommandProfile:
+		return handleProfile(ctx, cmd, lf)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Command not implemented\n")
@@ -456,6 +461,25 @@ func handleHiddenGem(ctx context.Context, cmd *types.Command, lf *lastfm.Client)
 		}
 		fmt.Printf("%d. %s — %d plays (%s)\n", i+1, gem.Name, gem.UserPlaycount, othersDesc)
 	}
+
+	return nil
+}
+
+func handleProfile(ctx context.Context, cmd *types.Command, lf *lastfm.Client) error {
+	path, err := profile.Generate(ctx, lf.GetAPI(), cmd.User, cmd.Period)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	fmt.Printf("Profile saved: %s\n", path)
+
+	openCmd := "open"
+	if runtime.GOOS == "linux" {
+		openCmd = "xdg-open"
+	} else if runtime.GOOS != "darwin" {
+		return nil
+	}
+	exec.Command(openCmd, path).Start() //nolint:errcheck
 
 	return nil
 }

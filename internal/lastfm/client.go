@@ -200,6 +200,9 @@ func (c *Client) GetAlbumScrobbles(ctx context.Context, artistName, albumName st
 		return types.UserCounts(userCounts), err
 	})
 	if err != nil {
+		if apiErr, ok := err.(*APIError); ok && apiErr.Code == 6 {
+			return nil, errors.NewNotFoundError(fmt.Sprintf("album \"%s\" by %s not found", albumName, artistName))
+		}
 		return nil, errors.NewAPIError(fmt.Sprintf("failed to get album scrobbles for %s - %s", artistName, albumName), err)
 	}
 
@@ -230,7 +233,7 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 				return
 			}
 
-			result, err := c.api.GetAlbumInfo(ctx, map[string]interface{}{"artist": artistName, "album": albumName, "username": user})
+			result, err := c.api.GetAlbumInfo(ctx, map[string]interface{}{"artist": artistName, "album": albumName, "username": user, "autocorrect": "1"})
 			if err != nil {
 				c.logger.Warn("Failed to get album info", "user", user, "artist", artistName, "album", albumName, "error", err)
 				// Send the error to the channel for potential propagation
@@ -242,8 +245,8 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 			}
 
 			playcount := 0
-			if result.Album.UserPlayCount != "" {
-				if pc, err := strconv.Atoi(result.Album.UserPlayCount); err == nil {
+			if s := result.Album.UserPlayCount.String(); s != "" {
+				if pc, err := strconv.Atoi(s); err == nil {
 					playcount = pc
 				}
 			}
@@ -269,10 +272,12 @@ func (c *Client) fetchAlbumScrobbles(ctx context.Context, artistName, albumName 
 		}
 	}
 
-	// If all users failed with API errors, log but don't propagate (resilient behavior)
+	// If all users failed with API errors, check if the album simply wasn't found
 	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		if apiErr, ok := apiErrors[0].(*APIError); ok && apiErr.Code == 6 {
+			return nil, apiErr
+		}
 		c.logger.Warn("All users failed for album scrobbles", "artist", artistName, "album", albumName, "errors", len(apiErrors))
-		// Return empty results instead of propagating error
 	}
 
 	var userCounts []types.UserCount

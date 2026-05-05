@@ -156,7 +156,7 @@ func TestClient_ErrorPropagation(t *testing.T) {
 		{"GetAlbumScrobbles", func() error {
 			_, err := client.GetAlbumScrobbles(ctx, "Test Artist", "Test Album")
 			return err
-		}, false}, // Resilient - logs errors but doesn't fail
+		}, true}, // Propagates "not found" (code 6) errors to surface meaningful feedback
 		{"GetTrackScrobbles", func() error {
 			_, err := client.GetTrackScrobbles(ctx, "Test Artist", "Test Track")
 			return err
@@ -194,7 +194,7 @@ func TestClient_ErrorPropagation(t *testing.T) {
 				}
 
 				// Errors should be wrapped, so check for API error information
-				if !strings.Contains(err.Error(), "Last.fm API error") && !strings.Contains(err.Error(), "failed to") {
+				if !strings.Contains(err.Error(), "Last.fm API error") && !strings.Contains(err.Error(), "failed to") && !strings.Contains(err.Error(), "not found") {
 					t.Errorf("Expected wrapped API error, got: %v", err)
 				}
 			} else {
