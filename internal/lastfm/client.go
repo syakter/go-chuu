@@ -1326,12 +1326,12 @@ func (c *Client) fetchGroupRecommendations(ctx context.Context, username, period
 				if existing, ok := artistStats[key]; ok {
 					existing.TotalPlaycount += playcount
 					existing.UserCount++
-					existing.UserPlaycounts[user] = playcount
+					existing.UserPlaycounts[strings.ToLower(user)] = playcount
 				} else {
 					artistStats[key] = &artistAggregation{
 						TotalPlaycount: playcount,
 						UserCount:      1,
-						UserPlaycounts: map[string]int{user: playcount},
+						UserPlaycounts: map[string]int{strings.ToLower(user): playcount},
 					}
 				}
 			}
@@ -1385,11 +1385,51 @@ func (c *Client) fetchGroupRecommendations(ctx context.Context, username, period
 		return recommendations[i].Score > recommendations[j].Score
 	})
 
-	if len(recommendations) > 7 {
-		recommendations = recommendations[:7]
+	// Take up to 20 candidates, then verify actual user playcounts via artist.getInfo.
+	// Top-N fetches only capture artists within each user's top 100; an artist the user
+	// has listened to infrequently won't appear there and would show as 0 plays.
+	candidates := recommendations
+	if len(candidates) > 20 {
+		candidates = candidates[:20]
 	}
 
-	return recommendations, nil
+	var verifyWg sync.WaitGroup
+	var verifyMu sync.Mutex
+	for i := range candidates {
+		verifyWg.Add(1)
+		go func(idx int) {
+			defer verifyWg.Done()
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				return
+			}
+			result, err := c.api.GetArtistInfo(ctx, map[string]interface{}{
+				"artist": candidates[idx].Name, "username": username, "autocorrect": "1",
+			})
+			if err != nil {
+				return
+			}
+			if pc, err := strconv.Atoi(result.Artist.Stats.UserPlays); err == nil {
+				verifyMu.Lock()
+				candidates[idx].UserPlaycount = pc
+				candidates[idx].Score = float64(candidates[idx].GroupTotal) / float64(pc+1)
+				verifyMu.Unlock()
+			}
+		}(i)
+	}
+	verifyWg.Wait()
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	if len(candidates) > 7 {
+		candidates = candidates[:7]
+	}
+
+	return candidates, nil
 }
 
 // GetHiddenGem returns a user's hidden gems — artists they love that nobody else in the group listens to
@@ -1507,11 +1547,67 @@ func (c *Client) fetchHiddenGem(ctx context.Context, username, period string) ([
 		return gems[i].Score > gems[j].Score
 	})
 
-	if len(gems) > 5 {
-		gems = gems[:5]
+	// Take top 15 candidates, then replace the top-100-based others playcounts
+	// with accurate values from artist.getInfo so hidden gems aren't missed
+	// because a group member listens to the artist outside their top 100.
+	candidates := gems
+	if len(candidates) > 15 {
+		candidates = candidates[:15]
 	}
 
-	return gems, nil
+	for i := range candidates {
+		candidates[i].OthersTotal = 0
+		candidates[i].OthersCount = 0
+	}
+
+	var verifyWg sync.WaitGroup
+	var verifyMu sync.Mutex
+	for i := range candidates {
+		for _, otherUser := range c.config.Users {
+			if strings.ToLower(otherUser) == usernameLower {
+				continue
+			}
+			verifyWg.Add(1)
+			go func(idx int, user string) {
+				defer verifyWg.Done()
+				select {
+				case c.semaphore <- struct{}{}:
+					defer func() { <-c.semaphore }()
+				case <-ctx.Done():
+					return
+				}
+				result, err := c.api.GetArtistInfo(ctx, map[string]interface{}{
+					"artist": candidates[idx].Name, "username": user, "autocorrect": "1",
+				})
+				if err != nil {
+					return
+				}
+				if pc, err := strconv.Atoi(result.Artist.Stats.UserPlays); err == nil {
+					verifyMu.Lock()
+					candidates[idx].OthersTotal += pc
+					if pc > 0 {
+						candidates[idx].OthersCount++
+					}
+					verifyMu.Unlock()
+				}
+			}(i, otherUser)
+		}
+	}
+	verifyWg.Wait()
+
+	for i := range candidates {
+		candidates[i].Score = float64(candidates[i].UserPlaycount) / float64(candidates[i].OthersTotal+1)
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	if len(candidates) > 5 {
+		candidates = candidates[:5]
+	}
+
+	return candidates, nil
 }
 
 // fetchArtistTracksWithUserPlaycounts gets artist tracks and cross-references with user listening data
