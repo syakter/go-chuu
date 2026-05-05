@@ -7,11 +7,13 @@ A sophisticated Slack bot that provides music statistics and social features for
 ### 🎯 Core Commands
 - **Now Playing** (`!np`): See what everyone in your group is currently listening to
 - **Artist Fans** (`artistname` or `!artist artistname`): Find the biggest fans of any artist in your group
-- **Album/Track Fans** (`album by artist`, `!t track by artist`): Compare listening habits for specific releases
-- **Personal Stats** (`!top`, `!track`, `!ta`): Get individual top albums, tracks, and artists
-- **Group Stats** (`!kga`, `!kgt`): See the most popular content across your entire group
+- **Album/Track Fans** (`album by artist`, `!t track by artist`): Compare listening counts for specific releases
+- **Personal Stats** (`!top`, `!track`, `!ta`, `!rp`): Individual top albums, tracks, artists, and recent plays
+- **Group Stats** (`!kga`, `!kgt`): Most popular content across your entire group
 - **Leaderboards** (`!leaderboard`): Weekly scrobble competitions
-- **Visual Charts** (`!chart`): Generate beautiful 3x3 album artwork grids
+- **Visual Charts** (`!chart`): Generate album artwork grids (2×2 up to 10×10)
+- **Music Discovery** (`!disco`, `!dt`, `!rec`, `!hidden`): Explore new music based on group listening habits
+- **Profile Cards** (`!profile`): Formatted profile card with top artists, albums, tracks, and recent plays
 
 ### 🚀 Technical Features
 - **High Performance**: Parallel API processing with configurable concurrency limits
@@ -90,45 +92,74 @@ docker run --env-file .env --network=host go-chuu
 ## Commands Reference 📖
 
 ### Basic Usage
-- `!help` - Show all available commands
-- `!up` - Display bot uptime
+| Command | Description |
+|---------|-------------|
+| `!help` | Show all available commands |
+| `!up` / `!uptime` | Display bot uptime |
 
-### Music Discovery
-- `!np` - Show what everyone is currently playing
-- `Radiohead` - Show top Radiohead fans
-- `OK Computer by Radiohead` - Show top fans of specific album
-- `!t Creep by Radiohead` - Show top fans of specific track
+### Group Listening
+| Command | Description |
+|---------|-------------|
+| `!np` | Show what everyone is currently playing |
+| `!leaderboard` | Weekly scrobble leaderboard |
+| `!kga [period]` | Group's top albums in a period |
+| `!kgt [period]` | Group's top tracks in a period |
+
+### Fan Lookup
+| Command | Description |
+|---------|-------------|
+| `Radiohead` | Show top Radiohead fans in the group |
+| `!artist Radiohead` | Same as above (explicit form) |
+| `OK Computer by Radiohead` | Show top fans of a specific album |
+| `!t Creep by Radiohead` | Show top fans of a specific track |
 
 ### Personal Stats
-- `!top username [period]` - Top albums for user
-- `!track username [period]` - Top tracks for user  
-- `!ta username [period]` - Top artists for user
-- `!rp username [limit]` - Recent tracks (max 20)
-- `!chart username [period]` - Generate visual album chart
+| Command | Description |
+|---------|-------------|
+| `!top username [period]` | Top albums for a user |
+| `!track username [period]` | Top tracks for a user |
+| `!ta username [period]` | Top artists for a user |
+| `!rp username [limit]` | Recent tracks (default 5, max 20) |
+| `!profile username [period]` | Profile card — top artists, albums, tracks, and recent plays |
 
-### Group Stats
-- `!kga [period]` - Group's top albums
-- `!kgt [period]` - Group's top tracks
-- `!leaderboard` - Weekly scrobble leaderboard
+### Visual Charts
+| Command | Description |
+|---------|-------------|
+| `!chart username [period] [size]` | Album artwork grid. Size is `NxN` or `N` (2–10, default 3) |
 
-### Discovery Features
-- `!disco username artist` - User's top albums by specific artist
-- `!dt username artist` - User's top tracks by specific artist
+### Music Discovery
+| Command | Description |
+|---------|-------------|
+| `!disco username artist` | User's top albums by a specific artist |
+| `!dt username artist` | User's top tracks by a specific artist |
+| `!rec username [period]` | Artists the group loves that the user hasn't explored |
+| `!hidden username [period]` | User's hidden gems — artists they love that nobody else listens to |
 
-**Time Periods**: `7d`, `1m`, `3m`, `6m`, `1y`, `overall`
+### Time Periods
+| Value | Meaning |
+|-------|---------|
+| `24h` | Past 24 hours (chart only) |
+| `7d` | Past 7 days |
+| `1m` | Past month |
+| `3m` | Past 3 months |
+| `6m` | Past 6 months |
+| `1y` | Past year |
+| `overall` | All time (default) |
 
 ## Architecture 🏗️
 
 ```
 cmd/
-└── bot/           # Application entry point
+├── bot/           # Slack bot entry point
+└── cli/           # CLI for local testing
 internal/
 ├── cache/         # Caching layer with TTL support
-├── charts/        # Album chart generation
+├── charts/        # Album chart image generation
 ├── commands/      # Command parsing and validation
 ├── config/        # Configuration management
 ├── errors/        # Custom error types
 ├── lastfm/        # Last.fm API client with concurrency
+├── profile/       # Profile card data fetching and formatting
 ├── slack/         # Slack event handling
 └── types/         # Shared type definitions
 ```
