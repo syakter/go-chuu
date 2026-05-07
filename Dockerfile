@@ -22,7 +22,7 @@ FROM alpine:latest
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates tzdata
 
-WORKDIR /root/
+WORKDIR /app
 
 # Copy binary from builder stage
 COPY --from=builder /app/go-chuu .
