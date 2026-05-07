@@ -830,6 +830,7 @@ func (c *Client) fetchTopAlbumsAcrossUsers(ctx context.Context, period string, l
 			case c.semaphore <- struct{}{}:
 				defer func() { <-c.semaphore }()
 			case <-ctx.Done():
+				errorChan <- ctx.Err()
 				return
 			}
 
@@ -865,11 +866,19 @@ func (c *Client) fetchTopAlbumsAcrossUsers(ctx context.Context, period string, l
 	wg.Wait()
 	close(errorChan)
 
-	// Check for errors
+	if ctx.Err() != nil {
+		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	var apiErrors []error
 	for err := range errorChan {
-		if err != nil {
-			return nil, err
+		if ctx.Err() == nil {
+			apiErrors = append(apiErrors, err)
 		}
+	}
+
+	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		c.logger.Warn("All users failed for top albums", "period", period, "errors", len(apiErrors))
 	}
 
 	// Convert map to sorted slice
@@ -933,6 +942,7 @@ func (c *Client) fetchTopTracksAcrossUsers(ctx context.Context, period string, l
 			case c.semaphore <- struct{}{}:
 				defer func() { <-c.semaphore }()
 			case <-ctx.Done():
+				errorChan <- ctx.Err()
 				return
 			}
 
@@ -968,11 +978,19 @@ func (c *Client) fetchTopTracksAcrossUsers(ctx context.Context, period string, l
 	wg.Wait()
 	close(errorChan)
 
-	// Check for errors
+	if ctx.Err() != nil {
+		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	var apiErrors []error
 	for err := range errorChan {
-		if err != nil {
-			return nil, err
+		if ctx.Err() == nil {
+			apiErrors = append(apiErrors, err)
 		}
+	}
+
+	if len(apiErrors) > 0 && len(apiErrors) >= len(c.config.Users) {
+		c.logger.Warn("All users failed for top tracks", "period", period, "errors", len(apiErrors))
 	}
 
 	// Convert map to sorted slice
