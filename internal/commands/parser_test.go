@@ -248,6 +248,38 @@ func TestParser_Parse(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:  "top genres command",
+			input: "!genres user1 3m",
+			expected: &types.Command{
+				Type:     types.CommandTopGenres,
+				User:     "user1",
+				Period:   "3m",
+				RawInput: "!genres user1 3m",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "top genres command no period",
+			input: "!genres user1",
+			expected: &types.Command{
+				Type:     types.CommandTopGenres,
+				User:     "user1",
+				RawInput: "!genres user1",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "top genres alias",
+			input: "!genre user1 7d",
+			expected: &types.Command{
+				Type:     types.CommandTopGenres,
+				User:     "user1",
+				Period:   "7d",
+				RawInput: "!genre user1 7d",
+			},
+			wantErr: false,
+		},
+		{
 			name:    "invalid user",
 			input:   "!track invaliduser 7d",
 			wantErr: true,

@@ -247,6 +247,12 @@ type AlbumInfo struct {
 	UserPlayCount json.Number `json:"userplaycount"`
 }
 
+// ArtistTag represents a genre tag associated with an artist
+type ArtistTag struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 // ArtistInfo represents detailed artist information
 type ArtistInfo struct {
 	Name  string `json:"name"`
@@ -254,6 +260,9 @@ type ArtistInfo struct {
 	Stats struct {
 		UserPlays string `json:"userplaycount"`
 	} `json:"stats"`
+	Tags struct {
+		Tag []ArtistTag `json:"tag"`
+	} `json:"tags"`
 }
 
 // TrackInfo represents detailed track information

@@ -74,6 +74,7 @@ const (
 	CommandRecommend      CommandType = "rec"
 	CommandHiddenGem      CommandType = "hidden"
 	CommandProfile        CommandType = "profile"
+	CommandTopGenres      CommandType = "genres"
 	CommandUnknown        CommandType = "unknown"
 )
 
@@ -191,4 +192,15 @@ type HiddenGemArtists []HiddenGemArtist
 
 func (hg HiddenGemArtists) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]HiddenGemArtist(hg))
+}
+
+type GenreCount struct {
+	Name  string `json:"name"`
+	Score int    `json:"score"`
+}
+
+type GenreCounts []GenreCount
+
+func (gc GenreCounts) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]GenreCount(gc))
 }

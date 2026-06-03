@@ -616,6 +616,123 @@ func (c *Client) fetchUserTopArtists(ctx context.Context, username, period strin
 	return c.filterRecent24Hours(artists, originalPeriod), nil
 }
 
+// fetchUserTopArtistsWithPlaycounts fetches user top artists with playcount data
+func (c *Client) fetchUserTopArtistsWithPlaycounts(ctx context.Context, username, period string, limit int) ([]Artist, error) {
+	period = c.normalizePeriod(period)
+
+	result, err := c.api.GetTopArtists(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
+	if err != nil {
+		return nil, err
+	}
+
+	var artists []Artist
+	for i, artist := range result.TopArtists.Artists {
+		if i >= limit {
+			break
+		}
+		artists = append(artists, artist)
+	}
+
+	return artists, nil
+}
+
+// GetUserTopGenres aggregates genre tags from a user's top artists for a given period
+func (c *Client) GetUserTopGenres(ctx context.Context, username, period string, limit int) ([]types.GenreCount, error) {
+	c.logger.Debug("Getting user top genres", "user", username, "period", period, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "user_top_genres",
+		User:   username,
+		Period: period,
+		Limit:  limit,
+	}
+
+	cacheTTL := c.config.CacheTTL
+	if is24HourPeriod(period) {
+		cacheTTL = time.Minute * 30
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, cacheTTL, func() (types.GenreCounts, error) {
+		genres, err := c.fetchUserTopGenres(ctx, username, period, limit)
+		return types.GenreCounts(genres), err
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get top genres for %s", username), err)
+	}
+
+	return []types.GenreCount(result), nil
+}
+
+// fetchUserTopGenres fetches top artists then aggregates their genre tags weighted by playcount
+func (c *Client) fetchUserTopGenres(ctx context.Context, username, period string, limit int) ([]types.GenreCount, error) {
+	artists, err := c.fetchUserTopArtistsWithPlaycounts(ctx, username, period, 20)
+	if err != nil {
+		return nil, err
+	}
+
+	tagScores := make(map[string]int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	errorChan := make(chan error, len(artists))
+
+	for _, artist := range artists {
+		wg.Add(1)
+		go func(artist Artist) {
+			defer wg.Done()
+
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				errorChan <- ctx.Err()
+				return
+			}
+
+			playcount := 0
+			if pc, err := strconv.Atoi(artist.PlayCount); err == nil {
+				playcount = pc
+			}
+			if playcount == 0 {
+				return
+			}
+
+			info, err := c.api.GetArtistInfo(ctx, map[string]interface{}{"artist": artist.Name, "username": username})
+			if err != nil {
+				c.logger.Warn("Failed to get artist info for genre aggregation", "artist", artist.Name, "error", err)
+				return
+			}
+
+			mu.Lock()
+			for _, tag := range info.Artist.Tags.Tag {
+				tagScores[strings.ToLower(tag.Name)] += playcount
+			}
+			mu.Unlock()
+		}(artist)
+	}
+
+	wg.Wait()
+	close(errorChan)
+
+	if ctx.Err() != nil {
+		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	genres := make([]types.GenreCount, 0, len(tagScores))
+	for name, score := range tagScores {
+		genres = append(genres, types.GenreCount{Name: name, Score: score})
+	}
+
+	sort.Slice(genres, func(i, j int) bool {
+		return genres[i].Score > genres[j].Score
+	})
+
+	if len(genres) > limit {
+		genres = genres[:limit]
+	}
+
+	return genres, nil
+}
+
 // GetUserRecentTracks gets recent tracks for a user
 func (c *Client) GetUserRecentTracks(ctx context.Context, username string, limit int) ([]string, error) {
 	c.logger.Debug("Getting user recent tracks", "user", username, "limit", limit)
@@ -1267,26 +1384,6 @@ func (c *Client) fetchArtistAlbumsWithUserPlaycounts(ctx context.Context, userna
 	}
 
 	return result, nil
-}
-
-// fetchUserTopArtistsWithPlaycounts fetches user top artists with playcount data
-func (c *Client) fetchUserTopArtistsWithPlaycounts(ctx context.Context, username, period string, limit int) ([]Artist, error) {
-	period = c.normalizePeriod(period)
-
-	result, err := c.api.GetTopArtists(ctx, map[string]interface{}{"user": username, "period": period, "limit": limit})
-	if err != nil {
-		return nil, err
-	}
-
-	var artists []Artist
-	for i, artist := range result.TopArtists.Artists {
-		if i >= limit {
-			break
-		}
-		artists = append(artists, artist)
-	}
-
-	return artists, nil
 }
 
 // GetGroupRecommendations returns artists the group loves that the given user hasn't listened to much

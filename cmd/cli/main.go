@@ -69,7 +69,7 @@ func run() error {
 		"track": true, "top": true, "ta": true, "topartist": true, "rp": true,
 		"leaderboard": true, "artist": true, "kga": true, "kgt": true,
 		"disco": true, "dt": true, "t": true, "rec": true, "hidden": true,
-		"profile": true,
+		"profile": true, "genres": true, "genre": true,
 	}
 	if knownCmds[strings.ToLower(args[0])] {
 		args[0] = "!" + args[0]
@@ -147,6 +147,9 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 
 	case types.CommandProfile:
 		return handleProfile(ctx, cmd, lf)
+
+	case types.CommandTopGenres:
+		return handleTopGenres(ctx, cmd, lf)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Command not implemented\n")
@@ -480,6 +483,25 @@ func handleProfile(ctx context.Context, cmd *types.Command, lf *lastfm.Client) e
 		return nil
 	}
 	exec.Command(openCmd, path).Start() //nolint:errcheck
+
+	return nil
+}
+
+func handleTopGenres(ctx context.Context, cmd *types.Command, lf *lastfm.Client) error {
+	genres, err := lf.GetUserTopGenres(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	if len(genres) == 0 {
+		fmt.Printf("No genre data found for %s.\n", cmd.User)
+		return nil
+	}
+
+	fmt.Printf("%s's top genres%s:\n\n", cmd.User, periodText(cmd.Period))
+	for i, genre := range genres {
+		fmt.Printf("%d. %s\n", i+1, genre.Name)
+	}
 
 	return nil
 }

@@ -224,6 +224,9 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 	case types.CommandProfile:
 		return h.handleProfileCommand(ctx, cmd)
 
+	case types.CommandTopGenres:
+		return h.handleTopGenresCommand(ctx, cmd)
+
 	default:
 		return &types.BotResponse{
 			Type:  types.ResponseTypeError,
@@ -777,6 +780,38 @@ func (h *Handler) handleProfileCommand(ctx context.Context, cmd *types.Command) 
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
 		Content: profile.FormatMarkdown(data),
+	}
+}
+
+// handleTopGenresCommand processes top genres commands
+func (h *Handler) handleTopGenresCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	genres, err := h.lastfmClient.GetUserTopGenres(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get user top genres", "error", err, "user", cmd.User, "period", cmd.Period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(genres) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("No genre data found for %s.", cmd.User),
+		}
+	}
+
+	var content strings.Builder
+	periodText := h.formatPeriodText(cmd.Period)
+	content.WriteString(fmt.Sprintf("%s's top genres%s:\n\n", cmd.User, periodText))
+
+	for i, genre := range genres {
+		content.WriteString(fmt.Sprintf("%d. %s\n", i+1, genre.Name))
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
 	}
 }
 

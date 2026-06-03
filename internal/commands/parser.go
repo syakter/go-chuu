@@ -154,6 +154,10 @@ func (p *Parser) parseCommand(command *types.Command, message string) error {
 		command.Type = types.CommandProfile
 		return p.parseUserPeriodArgs(command, args)
 
+	case "!genres", "!genre":
+		command.Type = types.CommandTopGenres
+		return p.parseUserPeriodArgs(command, args)
+
 	case "!t":
 		command.Type = types.CommandTrackFans
 		return p.parseTrackQuery(command, strings.Join(args, " "))
@@ -365,6 +369,8 @@ func GetHelpText() string {
 		`!hidden <user> [period]: <user>'s hidden gems — artists they love that nobody else listens to
 ` +
 		`!profile <user> [period]: HTML music profile card — opens in browser
+` +
+		`!genres <user> [period]: Top music genres for <user> in <period>
 ` +
 		`!leaderboard: Leaderboard for previous week
 ` +
