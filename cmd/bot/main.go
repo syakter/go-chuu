@@ -17,6 +17,7 @@ import (
 	"github.com/syakter/go-chuu/internal/config"
 	"github.com/syakter/go-chuu/internal/lastfm"
 	"github.com/syakter/go-chuu/internal/logger"
+	"github.com/syakter/go-chuu/internal/ollama"
 	"github.com/syakter/go-chuu/internal/slack"
 )
 
@@ -90,11 +91,23 @@ func run() error {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
+	// Create Ollama client (optional — only if OLLAMA_URL is set)
+	var ollamaClient *ollama.Client
+	if cfg.OllamaURL != "" {
+		ollamaClient = ollama.NewClient(cfg.OllamaURL, cfg.OllamaModel, logger)
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := ollamaClient.Ping(pingCtx); err != nil {
+			logger.Warn("Ollama unreachable at startup, AI features disabled", "error", err)
+			ollamaClient = nil
+		}
+		pingCancel()
+	}
+
 	// Create command parser
 	parser := commands.NewParser(cfg.Users)
 
 	// Create Slack handler
-	slackHandler := slack.NewHandler(cfg, lastfmClient, chartGen, parser, logger)
+	slackHandler := slack.NewHandler(cfg, lastfmClient, chartGen, parser, logger, ollamaClient)
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())

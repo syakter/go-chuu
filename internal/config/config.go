@@ -32,6 +32,10 @@ type Config struct {
 	CacheEnabled          bool          `json:"cache_enabled"`
 	CacheTTL              time.Duration `json:"cache_ttl"`
 	RequestTimeout        time.Duration `json:"request_timeout"`
+
+	// Ollama configuration (optional)
+	OllamaURL   string `json:"ollama_url"`   // e.g. http://192.168.1.x:11434; empty = disabled
+	OllamaModel string `json:"ollama_model"` // e.g. llama3.2
 }
 
 // DefaultUsers represents the default user group
@@ -58,6 +62,8 @@ func Load() (*Config, error) {
 		CacheTTL:              getEnvDuration("CACHE_TTL", "5m"),
 		RequestTimeout:        getEnvDuration("REQUEST_TIMEOUT", "30s"),
 		SlackChannelID:        getEnv("SLACK_CHANNEL_ID", "C0392543PUY"),
+		OllamaURL:             getEnv("OLLAMA_URL", ""),
+		OllamaModel:           getEnv("OLLAMA_MODEL", "llama3.2"),
 	}
 
 	// Required environment variables
@@ -103,6 +109,8 @@ func LoadForCLI() (*Config, error) {
 		CacheTTL:              getEnvDuration("CACHE_TTL", "5m"),
 		RequestTimeout:        getEnvDuration("REQUEST_TIMEOUT", "30s"),
 		SlackChannelID:        "C0392543PUY",
+		OllamaURL:             getEnv("OLLAMA_URL", ""),
+		OllamaModel:           getEnv("OLLAMA_MODEL", "llama3.2"),
 	}
 
 	cfg.LastFMAPIKey = os.Getenv("LASTFM_API_KEY")

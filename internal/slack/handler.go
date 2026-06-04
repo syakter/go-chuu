@@ -16,6 +16,7 @@ import (
 	"github.com/syakter/go-chuu/internal/config"
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/lastfm"
+	"github.com/syakter/go-chuu/internal/ollama"
 	"github.com/syakter/go-chuu/internal/profile"
 	"github.com/syakter/go-chuu/internal/types"
 )
@@ -29,6 +30,7 @@ type Handler struct {
 	parser       *commands.Parser
 	config       *config.Config
 	logger       *slog.Logger
+	ollamaClient *ollama.Client // nil when Ollama is not configured
 	startTime    time.Time
 }
 
@@ -39,6 +41,7 @@ func NewHandler(
 	chartGen *charts.Generator,
 	parser *commands.Parser,
 	logger *slog.Logger,
+	ollamaClient *ollama.Client,
 ) *Handler {
 	api := slack.New(
 		cfg.SlackBotToken,
@@ -55,6 +58,7 @@ func NewHandler(
 		parser:       parser,
 		config:       cfg,
 		logger:       logger,
+		ollamaClient: ollamaClient,
 		startTime:    time.Now(),
 	}
 }

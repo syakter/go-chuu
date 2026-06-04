@@ -19,6 +19,7 @@ import (
 	"github.com/syakter/go-chuu/internal/errors"
 	"github.com/syakter/go-chuu/internal/lastfm"
 	"github.com/syakter/go-chuu/internal/logger"
+	"github.com/syakter/go-chuu/internal/ollama"
 	"github.com/syakter/go-chuu/internal/profile"
 	"github.com/syakter/go-chuu/internal/types"
 )
@@ -55,6 +56,18 @@ func run() error {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
+	// Create Ollama client (optional — only if OLLAMA_URL is set)
+	var ollamaClient *ollama.Client
+	if cfg.OllamaURL != "" {
+		ollamaClient = ollama.NewClient(cfg.OllamaURL, cfg.OllamaModel, log)
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := ollamaClient.Ping(pingCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Ollama unreachable, AI features disabled: %v\n", err)
+			ollamaClient = nil
+		}
+		pingCancel()
+	}
+
 	parser := commands.NewParser(cfg.Users)
 
 	args := os.Args[1:]
@@ -86,10 +99,10 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.RequestTimeout)
 	defer cancel()
 
-	return dispatch(ctx, cmd, lastfmClient, chartGen)
+	return dispatch(ctx, cmd, lastfmClient, chartGen, ollamaClient)
 }
 
-func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartGen *charts.Generator) error {
+func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartGen *charts.Generator, ollamaClient *ollama.Client) error {
 	switch cmd.Type {
 	case types.CommandHelp:
 		fmt.Print(commands.GetHelpText())
