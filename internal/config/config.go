@@ -36,6 +36,11 @@ type Config struct {
 	// Ollama configuration (optional)
 	OllamaURL   string `json:"ollama_url"`   // e.g. http://192.168.1.x:11434; empty = disabled
 	OllamaModel string `json:"ollama_model"` // e.g. llama3.2
+
+	// Recap scheduling (optional)
+	RecapSchedule string `json:"recap_schedule"` // "weekly", "monthly", or "" (disabled)
+	RecapWeekday  int    `json:"recap_weekday"`  // 0=Sunday … 6=Saturday (default 1=Monday)
+	RecapHour     int    `json:"recap_hour"`     // 0–23, hour of day to post (default 9)
 }
 
 // DefaultUsers represents the default user group
@@ -64,6 +69,9 @@ func Load() (*Config, error) {
 		SlackChannelID:        getEnv("SLACK_CHANNEL_ID", "C0392543PUY"),
 		OllamaURL:             getEnv("OLLAMA_URL", ""),
 		OllamaModel:           getEnv("OLLAMA_MODEL", "llama3.2"),
+		RecapSchedule:         getEnv("RECAP_SCHEDULE", ""),
+		RecapWeekday:          getEnvInt("RECAP_WEEKDAY", 1),
+		RecapHour:             getEnvInt("RECAP_HOUR", 9),
 	}
 
 	// Required environment variables
@@ -111,6 +119,9 @@ func LoadForCLI() (*Config, error) {
 		SlackChannelID:        "C0392543PUY",
 		OllamaURL:             getEnv("OLLAMA_URL", ""),
 		OllamaModel:           getEnv("OLLAMA_MODEL", "llama3.2"),
+		RecapSchedule:         getEnv("RECAP_SCHEDULE", ""),
+		RecapWeekday:          getEnvInt("RECAP_WEEKDAY", 1),
+		RecapHour:             getEnvInt("RECAP_HOUR", 9),
 	}
 
 	cfg.LastFMAPIKey = os.Getenv("LASTFM_API_KEY")

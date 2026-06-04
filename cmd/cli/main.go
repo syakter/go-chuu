@@ -82,7 +82,7 @@ func run() error {
 		"track": true, "top": true, "ta": true, "topartist": true, "rp": true,
 		"leaderboard": true, "artist": true, "kga": true, "kgt": true,
 		"disco": true, "dt": true, "t": true, "rec": true, "hidden": true,
-		"profile": true, "genres": true, "genre": true, "vibe": true, "airec": true,
+		"profile": true, "genres": true, "genre": true, "vibe": true, "airec": true, "recap": true,
 	}
 	if knownCmds[strings.ToLower(args[0])] {
 		args[0] = "!" + args[0]
@@ -169,6 +169,9 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 
 	case types.CommandVibe:
 		return handleVibe(ctx, cmd, lf, ollamaClient)
+
+	case types.CommandRecap:
+		return handleRecap(cmd, lf, ollamaClient)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Command not implemented\n")
@@ -623,6 +626,85 @@ func handleVibe(ctx context.Context, cmd *types.Command, lf *lastfm.Client, ol *
 
 	fmt.Printf("%s's vibe%s (via %s)\n\n%s\n", cmd.User, periodText(cmd.Period), ol.Model(), response)
 	return nil
+}
+
+func handleRecap(cmd *types.Command, lf *lastfm.Client, ol *ollama.Client) error {
+	if ol == nil {
+		return fmt.Errorf("AI features are not configured — set OLLAMA_URL to enable recap")
+	}
+
+	period := cmd.Period
+	if period == "" {
+		period = "7d"
+	}
+
+	// Use a generous timeout since we fetch all users concurrently
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	data, err := lf.FetchGroupRecapData(ctx, period)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	if len(data.Users) == 0 {
+		fmt.Println("No listening activity found for this period.")
+		return nil
+	}
+
+	prompt := buildRecapPromptCLI(data)
+	response, err := ol.Chat(ctx, []ollama.Message{{Role: "user", Content: prompt}})
+	if err != nil {
+		return fmt.Errorf("AI model unavailable: %w", err)
+	}
+
+	fmt.Printf("Kagang listening recap%s (via %s)\n\n%s\n", periodText(period), ol.Model(), response)
+	return nil
+}
+
+func buildRecapPromptCLI(data *lastfm.GroupRecapData) string {
+	var sb strings.Builder
+
+	sb.WriteString("You are a witty music journalist writing a brief group listening recap for a friend group chat.\n")
+	sb.WriteString("Write a 3-5 sentence narrative summary. Cover:\n")
+	sb.WriteString("- What the group has been into overall (shared obsessions, standout albums or tracks)\n")
+	sb.WriteString("- Notable individual trends (most active listener, anyone on a unique listening path)\n")
+	sb.WriteString("- Any artists that appear across multiple people's lists (call out the shared obsession)\n")
+	sb.WriteString("Be specific — reference real artists, albums, and names from the data. Keep it fun and conversational.\n")
+	sb.WriteString("Write flowing prose, no bullet points.\n\n")
+
+	sb.WriteString(fmt.Sprintf("Period: %s\n", data.Period))
+
+	sb.WriteString("\nPer-listener data (username, total plays, top artists):\n")
+	for _, u := range data.Users {
+		if len(u.TopArtists) > 0 {
+			sb.WriteString(fmt.Sprintf("- %s (%d plays): %s\n", u.Username, u.TotalPlays, strings.Join(u.TopArtists, ", ")))
+		}
+	}
+
+	if len(data.TopAlbums) > 0 {
+		limit := 5
+		if len(data.TopAlbums) < limit {
+			limit = len(data.TopAlbums)
+		}
+		sb.WriteString("\nTop albums across the group:\n")
+		for _, a := range data.TopAlbums[:limit] {
+			sb.WriteString(fmt.Sprintf("- %s (%d plays, %d listeners)\n", a.AlbumName, a.Playcount, a.UserCount))
+		}
+	}
+
+	if len(data.TopTracks) > 0 {
+		limit := 5
+		if len(data.TopTracks) < limit {
+			limit = len(data.TopTracks)
+		}
+		sb.WriteString("\nTop tracks across the group:\n")
+		for _, t := range data.TopTracks[:limit] {
+			sb.WriteString(fmt.Sprintf("- %s (%d plays)\n", t.TrackName, t.Playcount))
+		}
+	}
+
+	return sb.String()
 }
 
 // --- helpers ---

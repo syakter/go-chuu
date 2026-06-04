@@ -29,12 +29,14 @@ func main() {
 }
 
 func run() error {
-	// Load .env file if it exists (ignore error if file doesn't exist)
-	if err := godotenv.Load(); err != nil {
-		// Only log debug message, don't fail - environment variables might be set directly
-		if !os.IsNotExist(err) {
-			fmt.Printf("Warning: error loading .env file: %v\n", err)
-		}
+	// Load .env from the same directory as the binary so systemd services work
+	// regardless of their WorkingDirectory setting.
+	envPath := ".env"
+	if exe, err := os.Executable(); err == nil {
+		envPath = filepath.Join(filepath.Dir(exe), ".env")
+	}
+	if err := godotenv.Load(envPath); err != nil && !os.IsNotExist(err) {
+		fmt.Printf("Warning: error loading .env file: %v\n", err)
 	}
 
 	// Try loading with embedded keys first, fallback to regular loading

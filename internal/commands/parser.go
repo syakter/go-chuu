@@ -166,6 +166,12 @@ func (p *Parser) parseCommand(command *types.Command, message string) error {
 		command.Type = types.CommandAIRec
 		return p.parseUserPeriodArgs(command, args)
 
+	case "!recap":
+		command.Type = types.CommandRecap
+		if len(args) > 0 {
+			command.Period = args[0]
+		}
+
 	case "!t":
 		command.Type = types.CommandTrackFans
 		return p.parseTrackQuery(command, strings.Join(args, " "))
@@ -383,6 +389,8 @@ func GetHelpText() string {
 		`!vibe <user> [period]: AI-generated music taste profile for <user> (requires Ollama)
 ` +
 		`!airec <user> [period]: AI-generated artist recommendations based on <user>'s taste (requires Ollama)
+` +
+		`!recap [period]: AI narrative summary of what the group has been listening to (requires Ollama)
 ` +
 		`!leaderboard: Leaderboard for previous week
 ` +

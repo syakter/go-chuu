@@ -67,6 +67,7 @@ func NewHandler(
 func (h *Handler) Start(ctx context.Context) error {
 	h.logger.Info("Starting Slack handler")
 
+	h.runRecapScheduler(ctx)
 	go h.handleEvents(ctx)
 
 	return h.client.RunContext(ctx)
@@ -236,6 +237,9 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 
 	case types.CommandVibe:
 		return h.handleVibeCommand(ctx, cmd)
+
+	case types.CommandRecap:
+		return h.handleRecapCommand(ctx, cmd)
 
 	default:
 		return &types.BotResponse{
@@ -1006,4 +1010,186 @@ func (h *Handler) handleDiscoveryTrackCommand(ctx context.Context, cmd *types.Co
 		Type:    types.ResponseTypeText,
 		Content: content.String(),
 	}
+}
+
+// handleRecapCommand processes manual group recap requests.
+func (h *Handler) handleRecapCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	if h.ollamaClient == nil {
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "AI features are not configured. Set OLLAMA_URL in the bot's environment to enable !recap.",
+		}
+	}
+
+	period := cmd.Period
+	if period == "" {
+		period = "7d"
+	}
+
+	recapCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	content, err := h.generateRecap(recapCtx, period)
+	if err != nil {
+		h.logger.Error("Failed to generate recap", "error", err, "period", period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content,
+	}
+}
+
+// generateRecap fetches group data and produces an AI narrative for the given period.
+func (h *Handler) generateRecap(ctx context.Context, period string) (string, error) {
+	data, err := h.lastfmClient.FetchGroupRecapData(ctx, period)
+	if err != nil {
+		return "", err
+	}
+
+	if len(data.Users) == 0 {
+		return "No listening activity found for this period.", nil
+	}
+
+	prompt := buildRecapPrompt(data)
+	h.logger.Debug("Calling Ollama for recap", "period", period, "model", h.ollamaClient.Model())
+	response, err := h.ollamaClient.Chat(ctx, []ollama.Message{{Role: "user", Content: prompt}})
+	if err != nil {
+		return "", fmt.Errorf("AI model unavailable: %w", err)
+	}
+
+	return fmt.Sprintf("*Kagang listening recap%s* (via %s)\n\n%s", h.formatPeriodText(period), h.ollamaClient.Model(), response), nil
+}
+
+// buildRecapPrompt constructs the AI prompt for a group listening recap.
+func buildRecapPrompt(data *lastfm.GroupRecapData) string {
+	var sb strings.Builder
+
+	sb.WriteString("You are a witty music journalist writing a brief group listening recap for a friend group chat.\n")
+	sb.WriteString("Write a 3-5 sentence narrative summary. Cover:\n")
+	sb.WriteString("- What the group has been into overall (shared obsessions, standout albums or tracks)\n")
+	sb.WriteString("- Notable individual trends (most active listener, anyone on a unique listening path)\n")
+	sb.WriteString("- Any artists that appear across multiple people's lists (call out the shared obsession)\n")
+	sb.WriteString("Be specific — reference real artists, albums, and names from the data. Keep it fun and conversational.\n")
+	sb.WriteString("Write flowing prose, no bullet points.\n\n")
+
+	sb.WriteString(fmt.Sprintf("Period: %s\n", data.Period))
+
+	sb.WriteString("\nPer-listener data (username, total plays, top artists):\n")
+	for _, u := range data.Users {
+		if len(u.TopArtists) > 0 {
+			sb.WriteString(fmt.Sprintf("- %s (%d plays): %s\n", u.Username, u.TotalPlays, strings.Join(u.TopArtists, ", ")))
+		}
+	}
+
+	if len(data.TopAlbums) > 0 {
+		limit := 5
+		if len(data.TopAlbums) < limit {
+			limit = len(data.TopAlbums)
+		}
+		sb.WriteString("\nTop albums across the group:\n")
+		for _, a := range data.TopAlbums[:limit] {
+			sb.WriteString(fmt.Sprintf("- %s (%d plays, %d listeners)\n", a.AlbumName, a.Playcount, a.UserCount))
+		}
+	}
+
+	if len(data.TopTracks) > 0 {
+		limit := 5
+		if len(data.TopTracks) < limit {
+			limit = len(data.TopTracks)
+		}
+		sb.WriteString("\nTop tracks across the group:\n")
+		for _, t := range data.TopTracks[:limit] {
+			sb.WriteString(fmt.Sprintf("- %s (%d plays)\n", t.TrackName, t.Playcount))
+		}
+	}
+
+	return sb.String()
+}
+
+// runRecapScheduler starts a background goroutine that posts the recap on schedule.
+// It is a no-op if RecapSchedule is not "weekly" or "monthly".
+func (h *Handler) runRecapScheduler(ctx context.Context) {
+	schedule := h.config.RecapSchedule
+	if schedule != "weekly" && schedule != "monthly" {
+		return
+	}
+
+	h.logger.Info("Recap scheduler started", "schedule", schedule, "weekday", h.config.RecapWeekday, "hour", h.config.RecapHour)
+
+	go func() {
+		for {
+			next := h.nextRecapTime()
+			h.logger.Debug("Next recap scheduled", "at", next)
+
+			select {
+			case <-time.After(time.Until(next)):
+				h.postScheduledRecap(ctx)
+			case <-ctx.Done():
+				h.logger.Info("Recap scheduler stopping")
+				return
+			}
+		}
+	}()
+}
+
+// nextRecapTime returns the next time the scheduled recap should fire.
+func (h *Handler) nextRecapTime() time.Time {
+	now := time.Now()
+
+	switch h.config.RecapSchedule {
+	case "weekly":
+		target := time.Weekday(h.config.RecapWeekday)
+		daysUntil := (int(target) - int(now.Weekday()) + 7) % 7
+		if daysUntil == 0 && now.Hour() >= h.config.RecapHour {
+			daysUntil = 7 // already past this week's window
+		}
+		return time.Date(now.Year(), now.Month(), now.Day()+daysUntil, h.config.RecapHour, 0, 0, 0, now.Location())
+
+	case "monthly":
+		// First of this month at recap hour; if already past, use next month
+		candidate := time.Date(now.Year(), now.Month(), 1, h.config.RecapHour, 0, 0, 0, now.Location())
+		if now.After(candidate) {
+			candidate = candidate.AddDate(0, 1, 0)
+		}
+		return candidate
+
+	default:
+		return now.Add(100 * 365 * 24 * time.Hour)
+	}
+}
+
+// postScheduledRecap generates a recap and posts it to the configured Slack channel.
+func (h *Handler) postScheduledRecap(ctx context.Context) {
+	if h.ollamaClient == nil {
+		h.logger.Warn("Skipping scheduled recap: Ollama not configured")
+		return
+	}
+
+	period := "7d"
+	if h.config.RecapSchedule == "monthly" {
+		period = "1m"
+	}
+
+	h.logger.Info("Generating scheduled recap", "period", period)
+
+	recapCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	content, err := h.generateRecap(recapCtx, period)
+	if err != nil {
+		h.logger.Error("Failed to generate scheduled recap", "error", err)
+		return
+	}
+
+	if _, _, err := h.api.PostMessage(h.config.SlackChannelID, slack.MsgOptionText(content, false)); err != nil {
+		h.logger.Error("Failed to post scheduled recap", "error", err)
+		return
+	}
+
+	h.logger.Info("Scheduled recap posted successfully")
 }

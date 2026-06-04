@@ -77,6 +77,7 @@ const (
 	CommandTopGenres      CommandType = "genres"
 	CommandVibe           CommandType = "vibe"
 	CommandAIRec          CommandType = "airec"
+	CommandRecap          CommandType = "recap"
 	CommandUnknown        CommandType = "unknown"
 )
 
