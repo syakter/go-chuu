@@ -57,10 +57,16 @@ func LoadEmbedded() (*Config, error) {
 		return nil, fmt.Errorf("LASTFM_API_SECRET is required (set via environment variable or embedded at build time)")
 	}
 
+	// Optional runtime configuration
+	config.OllamaURL = getEnv("OLLAMA_URL", "")
+	config.OllamaModel = getEnv("OLLAMA_MODEL", "llama3.2")
+	config.RecapSchedule = getEnv("RECAP_SCHEDULE", "")
+	config.RecapWeekday = getEnvInt("RECAP_WEEKDAY", 1)
+	config.RecapHour = getEnvInt("RECAP_HOUR", 9)
+
 	// Optional user list override
 	if usersList := os.Getenv("USERS"); usersList != "" {
 		config.Users = strings.Split(usersList, ",")
-		// Trim whitespace from each user
 		for i, user := range config.Users {
 			config.Users[i] = strings.TrimSpace(user)
 		}
