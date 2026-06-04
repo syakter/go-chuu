@@ -82,7 +82,7 @@ func run() error {
 		"track": true, "top": true, "ta": true, "topartist": true, "rp": true,
 		"leaderboard": true, "artist": true, "kga": true, "kgt": true,
 		"disco": true, "dt": true, "t": true, "rec": true, "hidden": true,
-		"profile": true, "genres": true, "genre": true, "vibe": true,
+		"profile": true, "genres": true, "genre": true, "vibe": true, "airec": true,
 	}
 	if knownCmds[strings.ToLower(args[0])] {
 		args[0] = "!" + args[0]
@@ -153,7 +153,10 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 		return handleDiscoveryTrack(ctx, cmd, lf)
 
 	case types.CommandRecommend:
-		return handleRecommend(ctx, cmd, lf, ollamaClient)
+		return handleRecommend(ctx, cmd, lf)
+
+	case types.CommandAIRec:
+		return handleAIRec(ctx, cmd, lf, ollamaClient)
 
 	case types.CommandHiddenGem:
 		return handleHiddenGem(ctx, cmd, lf)
@@ -423,7 +426,7 @@ func handleDiscoveryTrack(ctx context.Context, cmd *types.Command, lf *lastfm.Cl
 	return nil
 }
 
-func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client, ol *ollama.Client) error {
+func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client) error {
 	period := cmd.Period
 	if period == "" {
 		period = "overall"
@@ -439,43 +442,6 @@ func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client,
 		return nil
 	}
 
-	// Fetch AI explanations if Ollama is available.
-	var explanations []string
-	if ol != nil {
-		artists, _ := lf.GetUserTopArtists(ctx, cmd.User, period, 8)
-		genres, _ := lf.GetUserTopGenres(ctx, cmd.User, period, 5)
-
-		var sb strings.Builder
-		sb.WriteString("You are a music expert. For each recommended artist listed below, write exactly one short sentence (max 15 words) explaining why a listener with the given taste would enjoy them.\n\n")
-		sb.WriteString("Return ONLY the explanation sentences, one per line, in the same order as the list. No numbering, no artist names — just the sentences.\n\n")
-		if len(artists) > 0 {
-			sb.WriteString(fmt.Sprintf("Listener (%s) already enjoys: %s\n", cmd.User, strings.Join(artists, ", ")))
-		}
-		if len(genres) > 0 {
-			var genreNames []string
-			for _, g := range genres {
-				genreNames = append(genreNames, g.Name)
-			}
-			sb.WriteString(fmt.Sprintf("Their top genres: %s\n", strings.Join(genreNames, ", ")))
-		}
-		sb.WriteString("\nArtists to explain (in order):\n")
-		for _, rec := range recs {
-			sb.WriteString(rec.Name + "\n")
-		}
-
-		if response, err := ol.Chat(ctx, []ollama.Message{{Role: "user", Content: sb.String()}}); err == nil {
-			var lines []string
-			for _, line := range strings.Split(response, "\n") {
-				if line = strings.TrimSpace(line); line != "" {
-					lines = append(lines, line)
-				}
-			}
-			if len(lines) == len(recs) {
-				explanations = lines
-			}
-		}
-	}
-
 	fmt.Printf("Artists the group loves that %s should check out%s:\n\n", cmd.User, periodText(period))
 	for i, rec := range recs {
 		if rec.UserPlaycount == 0 {
@@ -483,12 +449,59 @@ func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client,
 		} else {
 			fmt.Printf("%d. %s — %d group scrobbles (%d plays by %s)\n", i+1, rec.Name, rec.GroupTotal, rec.UserPlaycount, cmd.User)
 		}
-		if i < len(explanations) && explanations[i] != "" {
-			fmt.Printf("   %s\n", explanations[i])
-		}
 	}
 
 	return nil
+}
+
+func handleAIRec(ctx context.Context, cmd *types.Command, lf *lastfm.Client, ol *ollama.Client) error {
+	if ol == nil {
+		return fmt.Errorf("AI features are not configured — set OLLAMA_URL to enable airec")
+	}
+
+	period := cmd.Period
+	if period == "" {
+		period = "overall"
+	}
+
+	artists, err := lf.GetUserTopArtists(ctx, cmd.User, period, 10)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	genres, _ := lf.GetUserTopGenres(ctx, cmd.User, period, 8)
+
+	prompt := buildRecPrompt(cmd.User, artists, genres, periodText(period))
+	response, err := ol.Chat(ctx, []ollama.Message{{Role: "user", Content: prompt}})
+	if err != nil {
+		return fmt.Errorf("AI model unavailable: %w", err)
+	}
+
+	fmt.Printf("AI recommendations for %s%s (via %s):\n\n%s\n", cmd.User, periodText(period), ol.Model(), response)
+	return nil
+}
+
+func buildRecPrompt(username string, topArtists []string, topGenres []types.GenreCount, periodTxt string) string {
+	var sb strings.Builder
+	sb.WriteString("You are a music recommendation expert. Recommend 10 artists this listener would enjoy that are NOT already in their listening history.\n\n")
+	sb.WriteString("Return a numbered list of exactly 10 artists, one per line, in this exact format:\n")
+	sb.WriteString("1. Artist Name — one sentence (max 15 words) explaining the connection to their taste\n\n")
+	sb.WriteString("Only return the numbered list. No preamble, no summary.\n\n")
+	sb.WriteString(fmt.Sprintf("Listener: %s\n", username))
+	if periodTxt != "" {
+		sb.WriteString(fmt.Sprintf("Period: %s\n", strings.TrimPrefix(strings.TrimSpace(periodTxt), "for ")))
+	}
+	if len(topArtists) > 0 {
+		sb.WriteString(fmt.Sprintf("Their top artists: %s\n", strings.Join(topArtists, ", ")))
+	}
+	if len(topGenres) > 0 {
+		var genreNames []string
+		for _, g := range topGenres {
+			genreNames = append(genreNames, g.Name)
+		}
+		sb.WriteString(fmt.Sprintf("Their top genres: %s\n", strings.Join(genreNames, ", ")))
+	}
+	return sb.String()
 }
 
 func handleHiddenGem(ctx context.Context, cmd *types.Command, lf *lastfm.Client) error {

@@ -76,6 +76,7 @@ const (
 	CommandProfile        CommandType = "profile"
 	CommandTopGenres      CommandType = "genres"
 	CommandVibe           CommandType = "vibe"
+	CommandAIRec          CommandType = "airec"
 	CommandUnknown        CommandType = "unknown"
 )
 
