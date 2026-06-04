@@ -99,10 +99,14 @@ func run() error {
 		ollamaClient = ollama.NewClient(cfg.OllamaURL, cfg.OllamaModel, logger)
 		pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := ollamaClient.Ping(pingCtx); err != nil {
-			logger.Warn("Ollama unreachable at startup, AI features disabled", "error", err)
+			logger.Warn("Ollama unreachable — AI features disabled", "url", cfg.OllamaURL, "error", err)
 			ollamaClient = nil
+		} else {
+			logger.Info("Ollama connected — AI features enabled", "url", cfg.OllamaURL, "model", cfg.OllamaModel)
 		}
 		pingCancel()
+	} else {
+		logger.Info("Ollama not configured — AI features disabled (set OLLAMA_URL to enable)")
 	}
 
 	// Create command parser
