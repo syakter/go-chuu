@@ -15,6 +15,12 @@ A sophisticated Slack bot that provides music statistics and social features for
 - **Music Discovery** (`!disco`, `!dt`, `!rec`, `!hidden`): Explore new music based on group listening habits
 - **Profile Cards** (`!profile`): Formatted profile card with top artists, albums, tracks, and recent plays
 
+### 🤖 AI Features (requires Ollama)
+- **Taste Profile** (`!vibe`): AI-written description of a user's music taste based on their top artists and genres
+- **AI Recommendations** (`!airec`): Artist recommendations tailored to a user's listening history, outside what they already know
+- **Top Genres** (`!genres`): A user's most-listened genres derived from their top artists
+- **Group Recap** (`!recap`): AI narrative summary of what the group has been listening to — shared obsessions, standout albums, and individual trends. Can also be posted automatically on a schedule.
+
 ### 🚀 Technical Features
 - **High Performance**: Parallel API processing with configurable concurrency limits
 - **Smart Caching**: In-memory cache with TTL to reduce API calls and improve response times
@@ -89,6 +95,27 @@ docker run --env-file .env --network=host go-chuu
 | `SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown timeout |
 | `SLACK_CHANNEL_ID` | `C0392543PUY` | Default Slack channel for uploads |
 
+### AI Configuration (Ollama)
+
+AI features are optional and require a running [Ollama](https://ollama.com) instance accessible from the bot's server.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_URL` | *(disabled)* | Ollama server URL, e.g. `http://192.168.1.x:11434`. Leave unset to disable AI features. |
+| `OLLAMA_MODEL` | `llama3.2` | Model to use for inference, e.g. `llama3.1:8b` |
+| `RECAP_SCHEDULE` | *(disabled)* | Automatic recap schedule: `weekly` or `monthly` |
+| `RECAP_WEEKDAY` | `1` | Day of week for weekly recap (0=Sunday … 6=Saturday) |
+| `RECAP_HOUR` | `9` | Hour of day to post the scheduled recap (0–23) |
+
+**Setting up Ollama on a separate machine (e.g. a home PC with a GPU):**
+
+1. Install Ollama and pull a model: `ollama pull llama3.1:8b`
+2. Set `OLLAMA_HOST=0.0.0.0:11434` so Ollama accepts LAN connections
+3. Allow port 11434 through your firewall
+4. Set `OLLAMA_URL=http://<machine-ip>:11434` in the bot's `.env`
+
+At startup the bot logs whether Ollama is reachable and which model is loaded.
+
 ## Commands Reference 📖
 
 ### Basic Usage
@@ -135,6 +162,16 @@ docker run --env-file .env --network=host go-chuu
 | `!rec username [period]` | Artists the group loves that the user hasn't explored |
 | `!hidden username [period]` | User's hidden gems — artists they love that nobody else listens to |
 
+### AI Commands
+Requires `OLLAMA_URL` to be configured.
+
+| Command | Description |
+|---------|-------------|
+| `!genres username [period]` | Top music genres for a user, derived from their top artists |
+| `!vibe username [period]` | AI-written taste profile — a punchy 2–3 sentence description of the user's listening |
+| `!airec username [period]` | 10 AI-recommended artists outside the user's current listening history |
+| `!recap [period]` | AI narrative summary of recent group listening: shared obsessions, most active listener, standout releases (default: 7d) |
+
 ### Time Periods
 | Value | Meaning |
 |-------|---------|
@@ -159,6 +196,7 @@ internal/
 ├── config/        # Configuration management
 ├── errors/        # Custom error types
 ├── lastfm/        # Last.fm API client with concurrency
+├── ollama/        # Ollama HTTP client for local LLM inference
 ├── profile/       # Profile card data fetching and formatting
 ├── slack/         # Slack event handling
 └── types/         # Shared type definitions

@@ -1026,7 +1026,7 @@ func (h *Handler) handleRecapCommand(ctx context.Context, cmd *types.Command) *t
 		period = "7d"
 	}
 
-	recapCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	recapCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	content, err := h.generateRecap(recapCtx, period)
