@@ -499,6 +499,47 @@ func (h *Handler) sendResponse(ctx context.Context, channel string, response *ty
 	}
 }
 
+// buildRecExplanationPrompt asks the model for one explanation per recommended artist.
+func buildRecExplanationPrompt(username string, topArtists []string, topGenres []types.GenreCount, recs []types.RecommendedArtist) string {
+	var sb strings.Builder
+	sb.WriteString("You are a music expert. For each recommended artist listed below, write exactly one short sentence (max 15 words) explaining why a listener with the given taste would enjoy them.\n\n")
+	sb.WriteString("Return ONLY the explanation sentences, one per line, in the same order as the list. No numbering, no artist names — just the sentences.\n\n")
+
+	if len(topArtists) > 0 {
+		sb.WriteString(fmt.Sprintf("Listener (%s) already enjoys: %s\n", username, strings.Join(topArtists, ", ")))
+	}
+	if len(topGenres) > 0 {
+		genreNames := make([]string, len(topGenres))
+		for i, g := range topGenres {
+			genreNames[i] = g.Name
+		}
+		sb.WriteString(fmt.Sprintf("Their top genres: %s\n", strings.Join(genreNames, ", ")))
+	}
+
+	sb.WriteString("\nArtists to explain (in order):\n")
+	for _, rec := range recs {
+		sb.WriteString(rec.Name + "\n")
+	}
+
+	return sb.String()
+}
+
+// parseExplanationLines splits an Ollama response into one string per recommendation.
+// Returns nil if the line count doesn't match expected, triggering a graceful fallback.
+func parseExplanationLines(response string, expected int) []string {
+	var lines []string
+	for _, line := range strings.Split(response, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) != expected {
+		return nil
+	}
+	return lines
+}
+
 // buildVibePrompt constructs the Ollama prompt for a user's taste profile.
 func buildVibePrompt(username, periodText string, genres []types.GenreCount, artists []string) string {
 	var genreNames []string
@@ -735,6 +776,9 @@ func (h *Handler) handleRecommendCommand(ctx context.Context, cmd *types.Command
 		}
 	}
 
+	// Fetch AI explanations if Ollama is available, fall back to empty slice on any failure.
+	explanations := h.fetchRecExplanations(ctx, cmd.User, period, recommendations)
+
 	var content strings.Builder
 	periodText := h.formatPeriodText(period)
 	content.WriteString(fmt.Sprintf("Artists the group loves that %s should check out%s:\n\n", cmd.User, periodText))
@@ -745,12 +789,44 @@ func (h *Handler) handleRecommendCommand(ctx context.Context, cmd *types.Command
 		} else {
 			content.WriteString(fmt.Sprintf("%d. %s — %d group scrobbles (%d plays by %s)\n", i+1, rec.Name, rec.GroupTotal, rec.UserPlaycount, cmd.User))
 		}
+		if i < len(explanations) && explanations[i] != "" {
+			content.WriteString(fmt.Sprintf("   %s\n", explanations[i]))
+		}
 	}
 
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
 		Content: content.String(),
 	}
+}
+
+// fetchRecExplanations calls Ollama to generate one-line explanations for each recommended artist.
+// Returns an empty slice (no-op) when Ollama is not configured or the call fails.
+func (h *Handler) fetchRecExplanations(ctx context.Context, username, period string, recs []types.RecommendedArtist) []string {
+	if h.ollamaClient == nil {
+		return nil
+	}
+
+	artists, err := h.lastfmClient.GetUserTopArtists(ctx, username, period, 8)
+	if err != nil {
+		h.logger.Warn("Could not fetch user artists for rec explanations", "error", err)
+		artists = nil
+	}
+
+	genres, err := h.lastfmClient.GetUserTopGenres(ctx, username, period, 5)
+	if err != nil {
+		h.logger.Warn("Could not fetch user genres for rec explanations", "error", err)
+		genres = nil
+	}
+
+	prompt := buildRecExplanationPrompt(username, artists, genres, recs)
+	response, err := h.ollamaClient.Chat(ctx, []ollama.Message{{Role: "user", Content: prompt}})
+	if err != nil {
+		h.logger.Warn("Ollama call failed for rec explanations", "error", err)
+		return nil
+	}
+
+	return parseExplanationLines(response, len(recs))
 }
 
 // handleHiddenGemCommand processes hidden gem commands

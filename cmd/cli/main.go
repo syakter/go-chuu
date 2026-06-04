@@ -153,7 +153,7 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 		return handleDiscoveryTrack(ctx, cmd, lf)
 
 	case types.CommandRecommend:
-		return handleRecommend(ctx, cmd, lf)
+		return handleRecommend(ctx, cmd, lf, ollamaClient)
 
 	case types.CommandHiddenGem:
 		return handleHiddenGem(ctx, cmd, lf)
@@ -423,7 +423,7 @@ func handleDiscoveryTrack(ctx context.Context, cmd *types.Command, lf *lastfm.Cl
 	return nil
 }
 
-func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client) error {
+func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client, ol *ollama.Client) error {
 	period := cmd.Period
 	if period == "" {
 		period = "overall"
@@ -439,12 +439,52 @@ func handleRecommend(ctx context.Context, cmd *types.Command, lf *lastfm.Client)
 		return nil
 	}
 
+	// Fetch AI explanations if Ollama is available.
+	var explanations []string
+	if ol != nil {
+		artists, _ := lf.GetUserTopArtists(ctx, cmd.User, period, 8)
+		genres, _ := lf.GetUserTopGenres(ctx, cmd.User, period, 5)
+
+		var sb strings.Builder
+		sb.WriteString("You are a music expert. For each recommended artist listed below, write exactly one short sentence (max 15 words) explaining why a listener with the given taste would enjoy them.\n\n")
+		sb.WriteString("Return ONLY the explanation sentences, one per line, in the same order as the list. No numbering, no artist names — just the sentences.\n\n")
+		if len(artists) > 0 {
+			sb.WriteString(fmt.Sprintf("Listener (%s) already enjoys: %s\n", cmd.User, strings.Join(artists, ", ")))
+		}
+		if len(genres) > 0 {
+			var genreNames []string
+			for _, g := range genres {
+				genreNames = append(genreNames, g.Name)
+			}
+			sb.WriteString(fmt.Sprintf("Their top genres: %s\n", strings.Join(genreNames, ", ")))
+		}
+		sb.WriteString("\nArtists to explain (in order):\n")
+		for _, rec := range recs {
+			sb.WriteString(rec.Name + "\n")
+		}
+
+		if response, err := ol.Chat(ctx, []ollama.Message{{Role: "user", Content: sb.String()}}); err == nil {
+			var lines []string
+			for _, line := range strings.Split(response, "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					lines = append(lines, line)
+				}
+			}
+			if len(lines) == len(recs) {
+				explanations = lines
+			}
+		}
+	}
+
 	fmt.Printf("Artists the group loves that %s should check out%s:\n\n", cmd.User, periodText(period))
 	for i, rec := range recs {
 		if rec.UserPlaycount == 0 {
 			fmt.Printf("%d. %s — %d group scrobbles (0 plays by %s)\n", i+1, rec.Name, rec.GroupTotal, cmd.User)
 		} else {
 			fmt.Printf("%d. %s — %d group scrobbles (%d plays by %s)\n", i+1, rec.Name, rec.GroupTotal, rec.UserPlaycount, cmd.User)
+		}
+		if i < len(explanations) && explanations[i] != "" {
+			fmt.Printf("   %s\n", explanations[i])
 		}
 	}
 
