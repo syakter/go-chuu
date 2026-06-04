@@ -45,7 +45,7 @@ var DefaultUsers = []string{
 	"v0__", "Hirammj", "FrozenWaterz", "Silkmoney",
 	"Mo98t", "BTGKM9_Redd", "colbster411", "FaRiddim", "Vadermaulkylo",
 	"Schwarrtz", "Xutros", "Billy-Shakes", "maloboosie", "icy_twat", "junkiesRpeople", "rumnitty", "tak08820",
-	"gagieboy", "Homiealmaya",
+	"gagieboy", "Homiealmaya", "bigedf", "Middtown",
 }
 
 // Load loads configuration from environment variables
