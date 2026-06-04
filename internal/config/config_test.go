@@ -261,8 +261,8 @@ func TestLoadWithDotEnv(t *testing.T) {
 }
 
 func TestDefaultUsersCount(t *testing.T) {
-	t.Run("default users list has 24 users", func(t *testing.T) {
-		expectedCount := 24
+	t.Run("default users list has 26 users", func(t *testing.T) {
+		expectedCount := 26
 		actualCount := len(DefaultUsers)
 
 		if actualCount != expectedCount {

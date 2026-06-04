@@ -82,7 +82,7 @@ func run() error {
 		"track": true, "top": true, "ta": true, "topartist": true, "rp": true,
 		"leaderboard": true, "artist": true, "kga": true, "kgt": true,
 		"disco": true, "dt": true, "t": true, "rec": true, "hidden": true,
-		"profile": true, "genres": true, "genre": true,
+		"profile": true, "genres": true, "genre": true, "vibe": true,
 	}
 	if knownCmds[strings.ToLower(args[0])] {
 		args[0] = "!" + args[0]
@@ -163,6 +163,9 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 
 	case types.CommandTopGenres:
 		return handleTopGenres(ctx, cmd, lf)
+
+	case types.CommandVibe:
+		return handleVibe(ctx, cmd, lf, ollamaClient)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Command not implemented\n")
@@ -516,6 +519,56 @@ func handleTopGenres(ctx context.Context, cmd *types.Command, lf *lastfm.Client)
 		fmt.Printf("%d. %s\n", i+1, genre.Name)
 	}
 
+	return nil
+}
+
+func handleVibe(ctx context.Context, cmd *types.Command, lf *lastfm.Client, ol *ollama.Client) error {
+	if ol == nil {
+		return fmt.Errorf("AI features are not configured — set OLLAMA_URL to enable vibe")
+	}
+
+	genres, err := lf.GetUserTopGenres(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	artists, err := lf.GetUserTopArtists(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	if len(genres) == 0 && len(artists) == 0 {
+		fmt.Printf("Not enough listening data found for %s.\n", cmd.User)
+		return nil
+	}
+
+	var genreNames []string
+	for _, g := range genres {
+		genreNames = append(genreNames, g.Name)
+	}
+
+	var prompt strings.Builder
+	prompt.WriteString("You are a witty music critic writing quick listener profiles for a group chat. ")
+	prompt.WriteString("Write a 2-3 sentence description of this person's music taste based on their listening data. ")
+	prompt.WriteString("Be specific — reference their actual artists and genres. Make it punchy and fun, like something you'd share with friends. ")
+	prompt.WriteString("Don't be generic or wishy-washy.\n\n")
+	prompt.WriteString(fmt.Sprintf("Listener: %s\n", cmd.User))
+	if pt := periodText(cmd.Period); pt != "" {
+		prompt.WriteString(fmt.Sprintf("Period: %s\n", strings.TrimPrefix(strings.TrimSpace(pt), "for ")))
+	}
+	if len(genreNames) > 0 {
+		prompt.WriteString(fmt.Sprintf("Top genres: %s\n", strings.Join(genreNames, ", ")))
+	}
+	if len(artists) > 0 {
+		prompt.WriteString(fmt.Sprintf("Top artists: %s\n", strings.Join(artists, ", ")))
+	}
+
+	response, err := ol.Chat(ctx, []ollama.Message{{Role: "user", Content: prompt.String()}})
+	if err != nil {
+		return fmt.Errorf("AI model unavailable: %w", err)
+	}
+
+	fmt.Printf("%s's vibe%s (via %s)\n\n%s\n", cmd.User, periodText(cmd.Period), ol.Model(), response)
 	return nil
 }
 

@@ -75,6 +75,7 @@ const (
 	CommandHiddenGem      CommandType = "hidden"
 	CommandProfile        CommandType = "profile"
 	CommandTopGenres      CommandType = "genres"
+	CommandVibe           CommandType = "vibe"
 	CommandUnknown        CommandType = "unknown"
 )
 

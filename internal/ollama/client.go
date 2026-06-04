@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -43,7 +44,11 @@ type tagsResponse struct {
 }
 
 // NewClient creates an Ollama client. baseURL should be e.g. "http://192.168.1.x:11434".
+// If no scheme is provided, "http://" is prepended automatically.
 func NewClient(baseURL, model string, logger *slog.Logger) *Client {
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "http://" + baseURL
+	}
 	return &Client{
 		baseURL: baseURL,
 		model:   model,

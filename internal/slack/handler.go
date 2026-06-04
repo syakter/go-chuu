@@ -231,6 +231,9 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 	case types.CommandTopGenres:
 		return h.handleTopGenresCommand(ctx, cmd)
 
+	case types.CommandVibe:
+		return h.handleVibeCommand(ctx, cmd)
+
 	default:
 		return &types.BotResponse{
 			Type:  types.ResponseTypeError,
@@ -494,6 +497,32 @@ func (h *Handler) sendResponse(ctx context.Context, channel string, response *ty
 			h.logger.Error("Failed to send error message", "error", err)
 		}
 	}
+}
+
+// buildVibePrompt constructs the Ollama prompt for a user's taste profile.
+func buildVibePrompt(username, periodText string, genres []types.GenreCount, artists []string) string {
+	var genreNames []string
+	for _, g := range genres {
+		genreNames = append(genreNames, g.Name)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("You are a witty music critic writing quick listener profiles for a group chat. ")
+	sb.WriteString("Write a 2-3 sentence description of this person's music taste based on their listening data. ")
+	sb.WriteString("Be specific — reference their actual artists and genres. Make it punchy and fun, like something you'd share with friends. ")
+	sb.WriteString("Don't be generic or wishy-washy.\n\n")
+	sb.WriteString(fmt.Sprintf("Listener: %s\n", username))
+	if periodText != "" {
+		sb.WriteString(fmt.Sprintf("Period: %s\n", strings.TrimPrefix(strings.TrimSpace(periodText), "for ")))
+	}
+	if len(genreNames) > 0 {
+		sb.WriteString(fmt.Sprintf("Top genres: %s\n", strings.Join(genreNames, ", ")))
+	}
+	if len(artists) > 0 {
+		sb.WriteString(fmt.Sprintf("Top artists: %s\n", strings.Join(artists, ", ")))
+	}
+
+	return sb.String()
 }
 
 // sendErrorResponse sends an error response to the user
@@ -816,6 +845,60 @@ func (h *Handler) handleTopGenresCommand(ctx context.Context, cmd *types.Command
 	return &types.BotResponse{
 		Type:    types.ResponseTypeText,
 		Content: content.String(),
+	}
+}
+
+// handleVibeCommand generates an AI taste profile for a user using Ollama.
+func (h *Handler) handleVibeCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	if h.ollamaClient == nil {
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "AI features are not configured. Set OLLAMA_URL in the bot's environment to enable !vibe.",
+		}
+	}
+
+	genres, err := h.lastfmClient.GetUserTopGenres(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get genres for vibe", "error", err, "user", cmd.User)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	artists, err := h.lastfmClient.GetUserTopArtists(ctx, cmd.User, cmd.Period, 10)
+	if err != nil {
+		h.logger.Error("Failed to get artists for vibe", "error", err, "user", cmd.User)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(genres) == 0 && len(artists) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("Not enough listening data found for %s.", cmd.User),
+		}
+	}
+
+	prompt := buildVibePrompt(cmd.User, h.formatPeriodText(cmd.Period), genres, artists)
+
+	h.logger.Debug("Calling Ollama for vibe", "user", cmd.User, "model", h.ollamaClient.Model())
+	response, err := h.ollamaClient.Chat(ctx, []ollama.Message{
+		{Role: "user", Content: prompt},
+	})
+	if err != nil {
+		h.logger.Error("Ollama call failed for vibe", "error", err)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: "AI model is unavailable right now. Try again later.",
+		}
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: fmt.Sprintf("*%s's vibe%s* (via %s)\n\n%s", cmd.User, h.formatPeriodText(cmd.Period), h.ollamaClient.Model(), response),
 	}
 }
 
