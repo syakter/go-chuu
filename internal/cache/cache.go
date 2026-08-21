@@ -47,10 +47,12 @@ func NewInMemoryCache(maxSize int) *InMemoryCache {
 	return c
 }
 
-// Get retrieves data from cache
+// Get retrieves data from cache.
+// This takes the write lock rather than a read lock because it updates the hit/miss counters —
+// concurrent fan-outs (see Client.fetchAffinity) call this from many goroutines at once.
 func (c *InMemoryCache) Get(key types.CacheKey) ([]byte, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	entry, exists := c.data[key.String()]
 	if !exists {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -634,6 +635,50 @@ func (c *Client) fetchUserTopArtistsWithPlaycounts(ctx context.Context, username
 	}
 
 	return artists, nil
+}
+
+// GetUserTopArtistsWithPlaycounts returns a user's top artists along with their playcounts.
+// Unlike GetUserTopArtists (which returns names only) this keeps the playcount, and unlike the
+// unexported fetchUserTopArtistsWithPlaycounts it is cached — so a group-wide fan-out that calls
+// it once per user is served from cache on subsequent requests.
+func (c *Client) GetUserTopArtistsWithPlaycounts(ctx context.Context, username, period string, limit int) ([]types.ArtistPlay, error) {
+	c.logger.Debug("Getting user top artists with playcounts", "user", username, "period", period, "limit", limit)
+
+	cacheKey := types.CacheKey{
+		Type:   "user_top_artists_pc",
+		User:   username,
+		Period: period,
+		Limit:  limit,
+	}
+
+	// Use shorter TTL for 24h periods
+	cacheTTL := c.config.CacheTTL
+	if is24HourPeriod(period) {
+		cacheTTL = time.Minute * 30
+	}
+
+	result, err := cache.GetOrSet(c.cache, cacheKey, cacheTTL, func() (types.ArtistPlays, error) {
+		artists, err := c.fetchUserTopArtistsWithPlaycounts(ctx, username, period, limit)
+		if err != nil {
+			return nil, err
+		}
+
+		plays := make([]types.ArtistPlay, 0, len(artists))
+		for _, artist := range artists {
+			playcount := 0
+			if pc, pcErr := strconv.Atoi(artist.PlayCount); pcErr == nil {
+				playcount = pc
+			}
+			plays = append(plays, types.ArtistPlay{Name: artist.Name, Playcount: playcount})
+		}
+
+		return types.ArtistPlays(plays), nil
+	})
+	if err != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get top artists for %s", username), err)
+	}
+
+	return []types.ArtistPlay(result), nil
 }
 
 // GetUserTopGenres aggregates genre tags from a user's top artists for a given period
@@ -1723,6 +1768,259 @@ func (c *Client) fetchHiddenGem(ctx context.Context, username, period string) ([
 	}
 
 	return candidates, nil
+}
+
+// affinityArtistLimit is how many top artists per user feed the similarity calculation.
+// Higher than the 100 used by !rec/!hidden because overlap coverage is the whole signal here.
+const affinityArtistLimit = 200
+
+// affinityTopSharedCount is how many driving artists are reported per match
+const affinityTopSharedCount = 3
+
+// affinityMinArtists is the smallest vector worth scoring. Below this, cosine similarity measures
+// coincidence rather than taste — two users with three artists each sharing two would score 90%+.
+const affinityMinArtists = 5
+
+// GetAffinity ranks every other configured user by how similar their taste is to username.
+//
+// Deliberately not cached: the per-user artist vectors it builds on already are, so a repeat call
+// costs ~26 cache hits and a few milliseconds of arithmetic. Caching the ranking itself would mean
+// that if some users' fetches fail, the resulting short ranking gets frozen for the whole TTL —
+// and a missing row in a ranked list is invisible to the reader, unlike a missing contributor to
+// an aggregate.
+func (c *Client) GetAffinity(ctx context.Context, username, period string) ([]types.AffinityScore, error) {
+	c.logger.Debug("Getting taste affinity", "user", username, "period", period)
+
+	// 24h isn't a real Last.fm period — normalizePeriod maps it to 7day, and the 5-artist
+	// approximation filterRecent24Hours applies elsewhere is far too small for a meaningful
+	// cosine. Reject it rather than silently scoring a week's data under a "24h" label.
+	if is24HourPeriod(period) {
+		return nil, errors.NewValidationError("affinity needs at least a week of listening data — try 7d")
+	}
+
+	scores, err := c.fetchAffinity(ctx, username, period)
+	if err != nil {
+		// Preserve the error type; GetUserFriendlyMessage switches on it and does not unwrap
+		if errors.IsType(err, errors.ErrorTypeTimeout) || errors.IsType(err, errors.ErrorTypeValidation) {
+			return nil, err
+		}
+		return nil, errors.NewAPIError(fmt.Sprintf("failed to get affinity for %s", username), err)
+	}
+
+	return scores, nil
+}
+
+// fetchAffinity fans out once over the whole group to collect top-artist playcounts, then scores
+// every other user against the target entirely in memory — no extra API calls per pair.
+func (c *Client) fetchAffinity(ctx context.Context, username, period string) ([]types.AffinityScore, error) {
+	// vectors maps lowercased username -> lowercased artist name -> playcount
+	vectors := make(map[string]map[string]int)
+	// canonical recovers the original artist casing for display
+	canonical := make(map[string]string)
+	// display recovers the original username casing for display
+	display := make(map[string]string)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	// A failure for the target themselves is fatal — without their vector there is nothing to
+	// compare against, and reporting it as "no listening data" would misdiagnose an API outage.
+	var targetErr error
+
+	for _, user := range c.config.Users {
+		wg.Add(1)
+		go func(user string) {
+			defer wg.Done()
+
+			isTarget := strings.EqualFold(user, username)
+
+			select {
+			case c.semaphore <- struct{}{}:
+				defer func() { <-c.semaphore }()
+			case <-ctx.Done():
+				return
+			}
+
+			artists, err := c.GetUserTopArtistsWithPlaycounts(ctx, user, period, affinityArtistLimit)
+			if err != nil {
+				c.logger.Warn("Failed to get top artists for user", "user", user, "error", err)
+				if isTarget {
+					mu.Lock()
+					targetErr = err
+					mu.Unlock()
+				}
+				return
+			}
+
+			userLower := strings.ToLower(user)
+			vector := make(map[string]int, len(artists))
+
+			mu.Lock()
+			for _, artist := range artists {
+				key := strings.ToLower(artist.Name)
+				vector[key] = artist.Playcount
+				// First writer wins, except the target always overrides: goroutines finish in a
+				// random order, so without this the displayed casing of an artist spelled
+				// differently by different users would vary run to run.
+				if _, ok := canonical[key]; !ok || isTarget {
+					canonical[key] = artist.Name
+				}
+			}
+			vectors[userLower] = vector
+			display[userLower] = user
+			mu.Unlock()
+		}(user)
+	}
+
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		return nil, errors.NewTimeoutError("request cancelled", ctx.Err())
+	}
+
+	if targetErr != nil {
+		return nil, errors.NewAPIError(fmt.Sprintf("could not fetch listening data for %s", username), targetErr)
+	}
+
+	return computeAffinity(username, vectors, canonical, display), nil
+}
+
+// contribution is one shared artist's share of the dot product between two users
+type contribution struct {
+	artist string
+	weight float64
+}
+
+// computeAffinity scores every user in vectors against target using cosine similarity over
+// log-scaled playcounts. Log scaling damps raw listening volume so the score reflects agreement
+// on proportions rather than on who scrobbles more. Vectors are compared over the union of both
+// artist sets with missing artists treated as zero — comparing only the intersection would be
+// degenerate, since two users sharing a single artist would score a perfect 1.0.
+//
+// Scores are best read as a ranking, not as an intuitive percentage. Over 200-artist vectors most
+// of each vector is non-overlapping tail, so real scores cluster well below 1.0 and nobody sees
+// 95%. For the same reason scores are not comparable across periods — a short period yields small
+// vectors and systematically higher numbers.
+//
+// It is deliberately pure (no network, no client state) so the scoring can be tested directly.
+func computeAffinity(target string, vectors map[string]map[string]int, canonical, display map[string]string) []types.AffinityScore {
+	targetLower := strings.ToLower(target)
+
+	targetVec, ok := vectors[targetLower]
+	if !ok || len(targetVec) == 0 {
+		return nil
+	}
+
+	// Pre-compute the target's log-scaled vector and its norm once
+	targetLog := make(map[string]float64, len(targetVec))
+	var targetNorm float64
+	for _, artist := range sortedKeys(targetVec) {
+		w := logWeight(targetVec[artist])
+		if w == 0 {
+			continue
+		}
+		targetLog[artist] = w
+		targetNorm += w * w
+	}
+	targetNorm = math.Sqrt(targetNorm)
+	if targetNorm == 0 || len(targetLog) < affinityMinArtists {
+		return nil
+	}
+
+	scores := make([]types.AffinityScore, 0, len(vectors))
+
+	for userLower, vec := range vectors {
+		if userLower == targetLower {
+			continue
+		}
+
+		var dot, otherNorm float64
+		shared, counted := 0, 0
+		contributions := make([]contribution, 0, len(targetLog))
+
+		for _, artist := range sortedKeys(vec) {
+			w := logWeight(vec[artist])
+			if w == 0 {
+				continue
+			}
+			otherNorm += w * w
+			counted++
+
+			if tw, inTarget := targetLog[artist]; inTarget {
+				product := tw * w
+				dot += product
+				shared++
+				contributions = append(contributions, contribution{artist: artist, weight: product})
+			}
+		}
+
+		otherNorm = math.Sqrt(otherNorm)
+		if otherNorm == 0 || counted < affinityMinArtists {
+			continue
+		}
+
+		// Rank the artists driving the match by their contribution to the dot product,
+		// with the artist name as a tiebreak so the output is stable across runs.
+		sort.Slice(contributions, func(i, j int) bool {
+			if contributions[i].weight != contributions[j].weight {
+				return contributions[i].weight > contributions[j].weight
+			}
+			return contributions[i].artist < contributions[j].artist
+		})
+
+		topShared := make([]string, 0, affinityTopSharedCount)
+		for i, contrib := range contributions {
+			if i >= affinityTopSharedCount {
+				break
+			}
+			name := canonical[contrib.artist]
+			if name == "" {
+				name = contrib.artist
+			}
+			topShared = append(topShared, name)
+		}
+
+		name := display[userLower]
+		if name == "" {
+			name = userLower
+		}
+
+		scores = append(scores, types.AffinityScore{
+			Username:    name,
+			Score:       dot / (targetNorm * otherNorm),
+			SharedCount: shared,
+			TopShared:   topShared,
+		})
+	}
+
+	// Map iteration is randomised and these results are cached, so the tiebreak matters
+	sort.Slice(scores, func(i, j int) bool {
+		if scores[i].Score != scores[j].Score {
+			return scores[i].Score > scores[j].Score
+		}
+		return strings.ToLower(scores[i].Username) < strings.ToLower(scores[j].Username)
+	})
+
+	return scores
+}
+
+// sortedKeys returns a map's keys in a stable order. Floating-point addition is not associative,
+// so accumulating a dot product or norm in Go's randomised map order makes the result vary in its
+// last bits between runs — enough to break the score-then-name sort and reorder tied users.
+func sortedKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// logWeight converts a raw playcount into a log-scaled vector component
+func logWeight(playcount int) float64 {
+	if playcount <= 0 {
+		return 0
+	}
+	return math.Log(1 + float64(playcount))
 }
 
 // fetchArtistTracksWithUserPlaycounts gets artist tracks and cross-references with user listening data

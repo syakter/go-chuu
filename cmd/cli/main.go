@@ -83,6 +83,7 @@ func run() error {
 		"leaderboard": true, "artist": true, "kga": true, "kgt": true,
 		"disco": true, "dt": true, "t": true, "rec": true, "hidden": true,
 		"profile": true, "genres": true, "genre": true, "vibe": true, "airec": true, "recap": true,
+		"affinity": true,
 	}
 	if knownCmds[strings.ToLower(args[0])] {
 		args[0] = "!" + args[0]
@@ -160,6 +161,9 @@ func dispatch(ctx context.Context, cmd *types.Command, lf *lastfm.Client, chartG
 
 	case types.CommandHiddenGem:
 		return handleHiddenGem(ctx, cmd, lf)
+
+	case types.CommandAffinity:
+		return handleAffinity(ctx, cmd, lf)
 
 	case types.CommandProfile:
 		return handleProfile(ctx, cmd, lf)
@@ -535,6 +539,49 @@ func handleHiddenGem(ctx context.Context, cmd *types.Command, lf *lastfm.Client)
 			othersDesc = fmt.Sprintf("%d others also listen", gem.OthersCount)
 		}
 		fmt.Printf("%d. %s — %d plays (%s)\n", i+1, gem.Name, gem.UserPlaycount, othersDesc)
+	}
+
+	return nil
+}
+
+// affinityDetailLimit is how many of the top matches get their shared artists spelled out
+const affinityDetailLimit = 3
+
+func handleAffinity(ctx context.Context, cmd *types.Command, lf *lastfm.Client) error {
+	period := cmd.Period
+	if period == "" {
+		period = "overall"
+	}
+
+	scores, err := lf.GetAffinity(ctx, cmd.User, period)
+	if err != nil {
+		return fmt.Errorf("%s", errors.GetUserFriendlyMessage(err))
+	}
+
+	if len(scores) == 0 {
+		fmt.Printf("Not enough listening data to compare %s against the group%s.\n", cmd.User, periodText(period))
+		return nil
+	}
+
+	fmt.Printf("Taste affinity for %s%s:\n\n", cmd.User, periodText(period))
+	for i, score := range scores {
+		var prefix string
+		switch i {
+		case 0:
+			prefix = "👑."
+		case 1:
+			prefix = "🥈."
+		case 2:
+			prefix = "🥉."
+		default:
+			prefix = fmt.Sprintf("%d.", i+1)
+		}
+
+		fmt.Printf("%s %s — %.1f%% (%d shared artists)\n", prefix, score.Username, score.Score*100, score.SharedCount)
+
+		if i < affinityDetailLimit && len(score.TopShared) > 0 {
+			fmt.Printf("     %s\n", strings.Join(score.TopShared, ", "))
+		}
 	}
 
 	return nil

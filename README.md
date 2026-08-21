@@ -12,7 +12,7 @@ A sophisticated Slack bot that provides music statistics and social features for
 - **Group Stats** (`!kga`, `!kgt`): Most popular content across your entire group
 - **Leaderboards** (`!leaderboard`): Weekly scrobble competitions
 - **Visual Charts** (`!chart`): Generate album artwork grids (2×2 up to 10×10)
-- **Music Discovery** (`!disco`, `!dt`, `!rec`, `!hidden`): Explore new music based on group listening habits
+- **Music Discovery** (`!disco`, `!dt`, `!rec`, `!hidden`, `!affinity`): Explore new music based on group listening habits
 - **Profile Cards** (`!profile`): Formatted profile card with top artists, albums, tracks, and recent plays
 
 ### 🤖 AI Features (requires Ollama)
@@ -161,6 +161,7 @@ At startup the bot logs whether Ollama is reachable and which model is loaded.
 | `!dt username artist` | User's top tracks by a specific artist |
 | `!rec username [period]` | Artists the group loves that the user hasn't explored |
 | `!hidden username [period]` | User's hidden gems — artists they love that nobody else listens to |
+| `!affinity username [period]` | Ranks group members by how similar their taste is to the user, with the shared artists driving each match |
 
 ### AI Commands
 Requires `OLLAMA_URL` to be configured.

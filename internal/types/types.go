@@ -39,6 +39,20 @@ type HiddenGemArtist struct {
 	Score         float64 `json:"score"`
 }
 
+// ArtistPlay is a single artist with the playcount a user has for it
+type ArtistPlay struct {
+	Name      string `json:"name"`
+	Playcount int    `json:"playcount"`
+}
+
+// AffinityScore is one other user's taste similarity to the target user
+type AffinityScore struct {
+	Username    string   `json:"username"`
+	Score       float64  `json:"score"`        // cosine similarity, 0.0–1.0
+	SharedCount int      `json:"shared_count"` // artists present in both top lists
+	TopShared   []string `json:"top_shared"`   // canonical artist names, strongest contribution first
+}
+
 // Chart types
 type Album struct {
 	Name   string `json:"name"`
@@ -78,6 +92,7 @@ const (
 	CommandVibe           CommandType = "vibe"
 	CommandAIRec          CommandType = "airec"
 	CommandRecap          CommandType = "recap"
+	CommandAffinity       CommandType = "affinity"
 	CommandUnknown        CommandType = "unknown"
 )
 
@@ -195,6 +210,12 @@ type HiddenGemArtists []HiddenGemArtist
 
 func (hg HiddenGemArtists) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]HiddenGemArtist(hg))
+}
+
+type ArtistPlays []ArtistPlay
+
+func (ap ArtistPlays) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]ArtistPlay(ap))
 }
 
 type GenreCount struct {

@@ -150,6 +150,10 @@ func (p *Parser) parseCommand(command *types.Command, message string) error {
 		command.Type = types.CommandHiddenGem
 		return p.parseUserPeriodArgs(command, args)
 
+	case "!affinity":
+		command.Type = types.CommandAffinity
+		return p.parseUserPeriodArgs(command, args)
+
 	case "!profile":
 		command.Type = types.CommandProfile
 		return p.parseUserPeriodArgs(command, args)
@@ -381,6 +385,8 @@ func GetHelpText() string {
 		`!rec <user> [period]: Artists the group loves that <user> should check out
 ` +
 		`!hidden <user> [period]: <user>'s hidden gems — artists they love that nobody else listens to
+` +
+		`!affinity <user> [period]: Rank group members by how similar their taste is to <user>
 ` +
 		`!profile <user> [period]: HTML music profile card — opens in browser
 ` +

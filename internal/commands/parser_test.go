@@ -280,6 +280,42 @@ func TestParser_Parse(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:  "affinity command",
+			input: "!affinity user1 3m",
+			expected: &types.Command{
+				Type:     types.CommandAffinity,
+				User:     "user1",
+				Period:   "3m",
+				RawInput: "!affinity user1 3m",
+			},
+			wantErr: false,
+		},
+		{
+			name:  "affinity command no period",
+			input: "!affinity user1",
+			expected: &types.Command{
+				Type:     types.CommandAffinity,
+				User:     "user1",
+				RawInput: "!affinity user1",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "affinity command missing user",
+			input:   "!affinity",
+			wantErr: true,
+		},
+		{
+			name:    "affinity command unknown user",
+			input:   "!affinity nobody 3m",
+			wantErr: true,
+		},
+		{
+			name:    "affinity command invalid period",
+			input:   "!affinity user1 notaperiod",
+			wantErr: true,
+		},
+		{
 			name:    "invalid user",
 			input:   "!track invaliduser 7d",
 			wantErr: true,

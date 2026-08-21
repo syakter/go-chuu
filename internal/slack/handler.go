@@ -229,6 +229,9 @@ func (h *Handler) processCommand(ctx context.Context, cmd *types.Command) *types
 	case types.CommandHiddenGem:
 		return h.handleHiddenGemCommand(ctx, cmd)
 
+	case types.CommandAffinity:
+		return h.handleAffinityCommand(ctx, cmd)
+
 	case types.CommandProfile:
 		return h.handleProfileCommand(ctx, cmd)
 
@@ -870,6 +873,64 @@ func (h *Handler) handleHiddenGemCommand(ctx context.Context, cmd *types.Command
 			othersDesc = fmt.Sprintf("%d others also listen", gem.OthersCount)
 		}
 		content.WriteString(fmt.Sprintf("%d. %s — %d plays (%s)\n", i+1, gem.Name, gem.UserPlaycount, othersDesc))
+	}
+
+	return &types.BotResponse{
+		Type:    types.ResponseTypeText,
+		Content: content.String(),
+	}
+}
+
+// affinityDetailLimit is how many of the top matches get their shared artists spelled out.
+// Every user is listed — truncating a ranking hides the omission from the reader — but only the
+// top few carry the extra detail line.
+const affinityDetailLimit = 3
+
+// handleAffinityCommand ranks the group by taste similarity to the given user
+func (h *Handler) handleAffinityCommand(ctx context.Context, cmd *types.Command) *types.BotResponse {
+	period := cmd.Period
+	if period == "" {
+		period = "overall"
+	}
+
+	scores, err := h.lastfmClient.GetAffinity(ctx, cmd.User, period)
+	if err != nil {
+		h.logger.Error("Failed to get affinity", "error", err, "user", cmd.User, "period", period)
+		return &types.BotResponse{
+			Type:  types.ResponseTypeError,
+			Error: errors.GetUserFriendlyMessage(err),
+		}
+	}
+
+	if len(scores) == 0 {
+		return &types.BotResponse{
+			Type:    types.ResponseTypeText,
+			Content: fmt.Sprintf("Not enough listening data to compare %s against the group%s.", cmd.User, h.formatPeriodText(period)),
+		}
+	}
+
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("Taste affinity for %s%s:\n\n", cmd.User, h.formatPeriodText(period)))
+
+	for i, score := range scores {
+		var prefix string
+		switch i {
+		case 0:
+			prefix = "👑."
+		case 1:
+			prefix = "🥈."
+		case 2:
+			prefix = "🥉."
+		default:
+			prefix = fmt.Sprintf("%d.", i+1)
+		}
+
+		content.WriteString(fmt.Sprintf("%s %s — %.1f%% (%d shared artists)\n",
+			prefix, score.Username, score.Score*100, score.SharedCount))
+
+		if i < affinityDetailLimit && len(score.TopShared) > 0 {
+			content.WriteString(fmt.Sprintf("     %s\n", strings.Join(score.TopShared, ", ")))
+		}
 	}
 
 	return &types.BotResponse{
