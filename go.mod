@@ -1,6 +1,6 @@
 module github.com/syakter/go-chuu
 
-go 1.22
+go 1.27
 
 require (
 	github.com/disintegration/imaging v1.6.2
