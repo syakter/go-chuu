@@ -32,7 +32,7 @@ A sophisticated Slack bot that provides music statistics and social features for
 ## Quick Start 🚀
 
 ### Prerequisites
-- Go 1.22+
+- Go 1.27+
 - Slack Bot Token and App Token
 - Last.fm API credentials
 
@@ -268,7 +268,7 @@ GOOS=linux GOARCH=amd64 go build -o go-chuu-linux ./cmd/bot
 ### Docker
 ```dockerfile
 # Multi-stage build for smaller image
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
