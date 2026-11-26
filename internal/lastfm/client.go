@@ -807,15 +807,17 @@ func (c *Client) fetchUserRecentTracks(ctx context.Context, username string, lim
 	}
 
 	var tracks []string
-	for i, track := range result.RecentTracks.Tracks {
-		if i >= limit {
-			break
-		}
+	for _, track := range result.RecentTracks.Tracks {
 		// Skip now playing tracks in recent tracks list
 		if track.NowPlaying == "true" {
 			continue
 		}
 		tracks = append(tracks, formatTrackName(track.Artist.Name, track.Name))
+		// Count only tracks we keep, so a skipped now-playing entry
+		// doesn't use up one of the requested slots.
+		if len(tracks) >= limit {
+			break
+		}
 	}
 
 	return tracks, nil

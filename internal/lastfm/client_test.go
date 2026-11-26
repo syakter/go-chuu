@@ -635,3 +635,38 @@ func TestClient_SortingBehavior(t *testing.T) {
 		}
 	}
 }
+
+// recentTracksNowPlayingAPI returns a now-playing track followed by limit
+// scrobbled tracks, mirroring Last.fm's user.getRecentTracks behavior.
+type recentTracksNowPlayingAPI struct {
+	*mockAPI
+}
+
+func (m *recentTracksNowPlayingAPI) GetRecentTracks(ctx context.Context, params map[string]interface{}) (*RecentTracksResponse, error) {
+	limit := params["limit"].(int)
+	tracks := []Track{{Name: "Playing Now", Artist: Artist{Name: "Artist"}, NowPlaying: "true"}}
+	for i := 0; i < limit; i++ {
+		tracks = append(tracks, Track{Name: "Scrobbled " + string(rune('A'+i)), Artist: Artist{Name: "Artist"}})
+	}
+	resp := &RecentTracksResponse{}
+	resp.RecentTracks.Tracks = tracks
+	return resp, nil
+}
+
+func TestClient_GetUserRecentTracks_SkipsNowPlayingWithoutLosingSlot(t *testing.T) {
+	client := createTestClientWithUsers([]string{"user1"})
+	client.api = &recentTracksNowPlayingAPI{mockAPI: newMockAPI()}
+
+	tracks, err := client.GetUserRecentTracks(context.Background(), "user1", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tracks) != 5 {
+		t.Fatalf("expected 5 tracks, got %d: %v", len(tracks), tracks)
+	}
+	for _, tr := range tracks {
+		if tr == formatTrackName("Artist", "Playing Now") {
+			t.Errorf("now-playing track should be excluded, got %v", tracks)
+		}
+	}
+}
