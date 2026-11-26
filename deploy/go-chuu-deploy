@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Installs a freshly built go-chuu binary and restarts the service.
+# Rolls back to the previous binary if the service does not stay up.
+#
+# Installed to /usr/local/sbin/go-chuu-deploy (root-owned) and run by the
+# GitHub runner user through a sudoers rule that allows only this script.
+#
+# Usage: go-chuu-deploy <path-to-new-binary>
+set -euo pipefail
+
+RUNNER_USER="${RUNNER_USER:-ghrunner}"
+SERVICE="go-chuu.service"
+INSTALL_DIR="/opt/go-chuu"
+BIN="$INSTALL_DIR/go-chuu"
+OWNER="gochuu"
+SETTLE_SECONDS=15
+
+src="${1:?usage: go-chuu-deploy <path-to-new-binary>}"
+
+staged="$(mktemp "$INSTALL_DIR/.go-chuu.new.XXXXXX")"
+trap 'rm -f "$staged"' EXIT
+
+# Read the source with the runner's own permissions, not root's, so the
+# path argument cannot be used to copy files the runner could not read.
+runuser -u "$RUNNER_USER" -- cat -- "$src" >"$staged"
+
+if ! file -b "$staged" | grep -q '^ELF .*executable'; then
+    echo "error: $src is not an ELF executable" >&2
+    exit 1
+fi
+
+chown "$OWNER:$OWNER" "$staged"
+chmod 0755 "$staged"
+
+# Keep the current binary for rollback (same name the manual process used).
+if [[ -f "$BIN" ]]; then
+    cp -p "$BIN" "$INSTALL_DIR/go-chuu-old"
+fi
+
+mv -f "$staged" "$BIN"
+trap - EXIT
+
+restarts_before() { systemctl show -p NRestarts --value "$SERVICE"; }
+
+echo "Restarting $SERVICE..."
+systemctl restart "$SERVICE"
+before="$(restarts_before)"
+sleep "$SETTLE_SECONDS"
+
+state="$(systemctl show -p ActiveState --value "$SERVICE")"
+after="$(restarts_before)"
+
+if [[ "$state" == "active" && "$after" == "$before" ]]; then
+    echo "Deploy OK: $SERVICE is running the new binary."
+    exit 0
+fi
+
+echo "error: $SERVICE did not stay up (state=$state, restarts $before -> $after). Rolling back." >&2
+journalctl -u "$SERVICE" -n 30 --no-pager >&2 || true
+
+if [[ -f "$INSTALL_DIR/go-chuu-old" ]]; then
+    cp -p "$INSTALL_DIR/go-chuu-old" "$BIN"
+    systemctl restart "$SERVICE"
+    echo "Rolled back to the previous binary." >&2
+fi
+exit 1

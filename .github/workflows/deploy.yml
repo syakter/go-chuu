@@ -1,0 +1,52 @@
+name: Deploy
+
+# A merged pull request lands on master as a push, so this runs on every merge.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Never run two deploys at once; a newer merge waits for the current one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        # Integration tests hit the real Last.fm API and skip without keys.
+        run: go test ./...
+
+  deploy:
+    needs: test
+    # Self-hosted runner on the Fedora LXC (see deploy/README.md).
+    runs-on: [self-hosted, linux, go-chuu-deploy]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so `git describe` gives a real version
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build
+        run: make build
+
+      - name: Install and restart
+        run: sudo /usr/local/sbin/go-chuu-deploy "$GITHUB_WORKSPACE/go-chuu"
